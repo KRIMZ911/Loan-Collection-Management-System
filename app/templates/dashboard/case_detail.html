@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block content %}
+
+{# ── Back button ── #}
+<a href="{{ url_for('dashboard.dashboard') }}" style="display:inline-flex;align-items:center;gap:6px;color:#2563EB;text-decoration:none;font-size:14px;margin-bottom:20px;">
+    ← Буцах
+</a>
+
+{# ── Borrower Header ── #}
+<div style="display:flex;align-items:center;gap:20px;margin-bottom:24px;">
+    <div style="width:56px;height:56px;border-radius:50%;background:{{ risk.color }};display:flex;align-items:center;justify-content:center;color:white;font-weight:700;font-size:18px;">
+        {{ risk.score }}
+    </div>
+    <div>
+        <h2 style="margin:0;font-size:22px;">{{ borrower.name if borrower else "—" }}</h2>
+        <p style="margin:4px 0 0;color:#64748B;font-size:13px;">
+            РД: {{ borrower.register_no if borrower else "—" }} &nbsp;|&nbsp;
+            📞 {{ borrower.phone if borrower else "—" }} &nbsp;|&nbsp;
+            📧 {{ borrower.email if borrower else "—" }}
+        </p>
+    </div>
+    <div style="margin-left:auto;">
+        <span class="risk-badge {{ risk.css_class }}">
+            <span class="risk-score">{{ risk.score }}</span>
+            {{ risk.emoji }} {{ risk.label_mn }}
+        </span>
+    </div>
+</div>
+
+{# ── Info Cards Row ── #}
+<div class="kpi-row">
+    <div class="kpi-card">
+        <div class="kpi-label">Зээлийн дүн</div>
+        <div class="kpi-value">{{ "{:,.0f}".format(loan.amount) }}₮</div>
+        <div class="kpi-sub">{{ loan.product_type if loan.product_type else "Зээл" }}</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-label">Үлдэгдэл</div>
+        <div class="kpi-value">{{ "{:,.0f}".format(loan.balance) }}₮</div>
+        <div class="kpi-sub">Одоогийн үлдэгдэл</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-label">Хэтэрсэн хоног</div>
+        <div class="kpi-value">{{ case.days_overdue }}</div>
+        <div class="kpi-sub">Зөрчилтэй: {{ "{:,.0f}".format(case.overdue_amount) }}₮</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-label">Төлөв</div>
+        <div class="kpi-value" style="font-size:16px;">
+            {% set labels = {"new":"Шинэ","contacted":"Холбогдсон","promise":"Амлалт","no_answer":"Хариугүй","transferred":"Шилжүүлсэн","legal":"Хууль зүй","court":"Шүүхэд","outsourced":"Outsourcing","resolved":"Шийдвэрлэсэн"} %}
+            {{ labels.get(case.status, case.status) }}
+        </div>
+        <div class="kpi-sub">Салбар: {{ loan.branch if loan.branch else "—" }}</div>
+    </div>
+</div>
+
+{# ── Loan Details ── #}
+<div class="card-panel" style="margin-top:20px;">
+    <div class="card-header"><h3>📋 Зээлийн мэдээлэл</h3></div>
+    <table>
+        <tbody>
+            <tr><td style="font-weight:600;width:200px;">Зээлийн дугаар</td><td>{{ loan.loan_number if loan else "—" }}</td></tr>
+            <tr><td style="font-weight:600;">Бүтээгдэхүүний төрөл</td><td>{{ loan.product_type if loan.product_type else "—" }}</td></tr>
+            <tr><td style="font-weight:600;">Олгосон огноо</td><td>{{ loan.disbursement_date.strftime("%Y-%m-%d") if loan.disbursement_date else "—" }}</td></tr>
+            <tr><td style="font-weight:600;">Дуусах огноо</td><td>{{ loan.maturity_date.strftime("%Y-%m-%d") if loan.maturity_date else "—" }}</td></tr>
+            <tr><td style="font-weight:600;">Хүү</td><td>{{ loan.interest_rate if loan.interest_rate else "—" }}%</td></tr>
+            <tr><td style="font-weight:600;">Хаяг</td><td>{{ borrower.address if borrower and borrower.address else "—" }}</td></tr>
+        </tbody>
+    </table>
+</div>
+
+{# ── Action History ── #}
+<div class="card-panel" style="margin-top:20px;">
+    <div class="card-header"><h3>🕐 Үйлдлийн түүх ({{ actions|length }})</h3></div>
+    {% if actions %}
+    <table>
+        <thead><tr>
+            <th>Огноо</th><th>Төрөл</th><th>Үр дүн</th><th>Тэмдэглэл</th>
+        </tr></thead>
+        <tbody>
+        {% set type_labels = {"phone_call":"📞 Утас","official_letter":"📄 Албан бичиг","meeting":"🤝 Уулзалт","note":"📝 Тэмдэглэл","promise_letter":"📋 Амлалт бичиг","collateral_check":"🏠 Барьцаа","transfer":"➡️ Шилжүүлэг"} %}
+        {% set outcome_labels = {"promise_made":"Амлалт авсан","no_answer":"Хариу өгөөгүй","payment_made":"Төлбөр хийсэн","callback":"Дахин холбогдох","transfer_to_taug":"ТАУГ-т шилжүүлсэн","contacted":"Холбогдсон"} %}
+        {% for a in actions %}
+        <tr>
+            <td>{{ a.created_at.strftime("%Y-%m-%d %H:%M") if a.created_at else "—" }}</td>
+            <td>{{ type_labels.get(a.action_type, a.action_type) }}</td>
+            <td>{{ outcome_labels.get(a.outcome, a.outcome or "—") }}</td>
+            <td>{{ a.notes or "—" }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p style="padding:20px;color:#94A3B8;text-align:center;">Үйлдэл бүртгэгдээгүй байна</p>
+    {% endif %}
+</div>
+
+{# ── Transfers ── #}
+{% if transfers %}
+<div class="card-panel" style="margin-top:20px;">
+    <div class="card-header"><h3>➡️ Шилжүүлгийн түүх ({{ transfers|length }})</h3></div>
+    <table>
+        <thead><tr>
+            <th>Огноо</th><th>Хаашаа</th><th>Шалтгаан</th><th>Төлөв</th>
+        </tr></thead>
+        <tbody>
+        {% for t in transfers %}
+        <tr>
+            <td>{{ t.transfer_date.strftime("%Y-%m-%d") if t.transfer_date else "—" }}</td>
+            <td>{{ t.to_entity or "—" }}</td>
+            <td>{{ t.reason or "—" }}</td>
+            <td>{{ t.status or "—" }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+{# ── Action Button ── #}
+<div style="margin-top:24px;display:flex;gap:10px;">
+    <button class="btn btn-primary" onclick="openActionModal({{ case.id }}, '{{ borrower.name if borrower else "" }}')">📝 Үйлдэл бүртгэх</button>
+    <a href="{{ url_for('dashboard.dashboard') }}" class="btn btn-outline">← Жагсаалт руу буцах</a>
+</div>
+
+{% endblock %}

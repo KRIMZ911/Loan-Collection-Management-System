@@ -94,6 +94,47 @@ def dashboard():
     ctx.update(data)
 
     return render_template(template, **ctx)
+@dashboard_bp.route("/case/<int:case_id>")
+def case_detail(case_id):
+    """Borrower/case detail page."""
+    role = session.get("role")
+    if not role:
+        return redirect(url_for("auth.index"))
+
+    case = CollectionCase.query.get_or_404(case_id)
+    loan = Loan.query.get(case.loan_id)
+    borrower = Borrower.query.get(loan.borrower_id) if loan else None
+
+    # Get all actions for this case
+    actions = (CaseAction.query
+               .filter_by(case_id=case.id)
+               .order_by(CaseAction.created_at.desc())
+               .all())
+
+    # Get transfers for this case
+    transfers = (CaseTransfer.query
+                 .filter_by(case_id=case.id)
+                 .order_by(CaseTransfer.transfer_date.desc())
+                 .all())
+
+    # Risk score
+    from app.services.scoring import calculate_risk_score
+    from sqlalchemy import func
+    last_action_date = (db.session.query(func.max(CaseAction.created_at))
+                        .filter(CaseAction.case_id == case.id)
+                        .scalar())
+    risk = calculate_risk_score(case, loan, last_action_date)
+
+    ctx = get_base_context()
+    ctx.update({
+        "case": case,
+        "loan": loan,
+        "borrower": borrower,
+        "actions": actions,
+        "transfers": transfers,
+        "risk": risk,
+    })
+    return render_template("dashboard/case_detail.html", **ctx)
 
 
 # ── БПҮХ ──────────────────────────────────────────────────

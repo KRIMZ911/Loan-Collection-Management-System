@@ -27,6 +27,16 @@ document.addEventListener("DOMContentLoaded", function() {
     // Set first nav item active
     const firstNav = document.querySelector(".nav-item");
     if (firstNav) firstNav.classList.add("active");
+
+    /* Make table rows clickable — skip if click was on a button */
+    var rows = document.querySelectorAll("tr[data-case-id]");
+    for (var i = 0; i < rows.length; i++) {
+        rows[i].addEventListener("click", function(e) {
+            if (e.target.closest("button") || e.target.closest(".quick-actions")) return;
+            var id = this.getAttribute("data-case-id");
+            if (id) goToCase(id);
+        });
+    }
 });
 
 // ── Submit Action ──
@@ -74,6 +84,11 @@ function quickAction(caseId, actionType, outcome) {
         }
     })
     .catch(function() { showToast("Алдаа гарлаа"); });
+}
+
+/* Navigate to case detail page */
+function goToCase(caseId) {
+    window.location.href = "/case/" + caseId;
 }
 
 // ── Toast ──
