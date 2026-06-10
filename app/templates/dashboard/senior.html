@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% macro kpi_row(kpis) %}
+<div class="kpi-row">
+{% for k in kpis %}
+    <div class="kpi-card">
+        <div class="kpi-label">{{ k.label }}</div>
+        <div class="kpi-value">{{ k.value }}</div>
+        {% if k.sub %}<div class="kpi-sub">{{ k.sub }}</div>{% endif %}
+    </div>
+{% endfor %}
+</div>
+{% endmacro %}
+
+{{ kpi_row(kpis) }}
+
+<div class="card-panel">
+    <div class="card-header"><h3>🏆 Шилдэг Collector-ууд</h3></div>
+    <div class="h-bar-group">
+    {% for c in collectors[:5] %}
+        <div class="h-bar-item">
+            <div class="h-bar-top"><span>{{ c.name }}</span><span style="font-weight:600">{{ c.success_rate }}%</span></div>
+            <div class="h-bar-track"><div class="h-bar-fill" style="width:{{ c.success_rate }}%;background:{% if c.success_rate >= 80 %}#10B981{% elif c.success_rate >= 60 %}#3B82F6{% else %}#F59E0B{% endif %}"></div></div>
+        </div>
+    {% endfor %}
+    </div>
+</div>
+
+<div class="card-panel">
+    <div class="card-header"><h3>📊 Collector гүйцэтгэл</h3></div>
+    <table>
+        <thead><tr><th>Collector</th><th>Хариуцсан хэрэг</th><th>Хийсэн үйлдэл</th><th>Амжилтын хувь</th><th>Дундаж хариу (хоног)</th></tr></thead>
+        <tbody>
+        {% for c in collectors %}
+        <tr><td><strong>{{ c.name }}</strong></td><td>{{ c.cases }}</td><td>{{ c.actions }}</td><td>{{ c.success_rate }}%</td><td>{{ c.avg_days }}</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="card-panel">
+    <div class="card-header"><h3>⏱️ Хугацааны шинжилгээ</h3></div>
+    <div class="metric-grid">
+        <div class="metric-item"><div class="m-val" style="color:#10B981">78%</div><div class="m-label">24 цагийн дотор хариу өгсөн</div></div>
+        <div class="metric-item"><div class="m-val" style="color:#F59E0B">15%</div><div class="m-label">48 цагийн дотор</div></div>
+        <div class="metric-item"><div class="m-val" style="color:#EF4444">7%</div><div class="m-label">48 цагаас хэтэрсэн</div></div>
+        <div class="metric-item"><div class="m-val">2.1</div><div class="m-label">Дундаж хариу өгөх хоног</div></div>
+    </div>
+</div>
+{% endblock %}

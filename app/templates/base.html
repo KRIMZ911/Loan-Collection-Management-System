@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="mn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CMS — {{ role_name }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/risk_badges.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/quick_actions.css') }}">
+</head>
+
+<body>
+<!-- Sidebar -->
+<aside class="sidebar">
+    <div class="sidebar-logo">
+        <h2>📊 CMS</h2>
+        <span>Collection Management</span>
+    </div>
+    <nav class="sidebar-nav">
+        {% for nav in nav_items %}
+        <a href="#" class="nav-item{% if loop.first %} active{% endif %}" onclick="setActiveNav(this)">
+            <span class="nav-icon">{{ nav.icon }}</span>{{ nav.label }}
+        </a>
+        {% endfor %}
+    </nav>
+    <div class="sidebar-footer">
+        <a href="{{ url_for('auth.logout') }}" class="switch-btn">↩️ Хэрэглэгч солих</a>
+    </div>
+</aside>
+
+<!-- Main Area -->
+<div class="main-area">
+    <div class="topbar">
+        <div class="topbar-left">
+            <h1>{{ role_name }}</h1>
+            <p>{{ role_sub }}</p>
+        </div>
+        <div class="topbar-right">
+            <span class="role-badge" style="background:{{ role_color }}">{{ role_sub }}</span>
+            <button class="notif-btn">🔔<span class="notif-dot"></span></button>
+        </div>
+    </div>
+    <div class="content">
+        {% block content %}{% endblock %}
+    </div>
+</div>
+
+<!-- Action Modal -->
+<div class="modal-overlay" id="actionModal">
+    <div class="modal">
+        <h3>📝 Үйлдэл бүртгэх</h3>
+        <label>Зээлдэгч</label>
+        <div id="modalBorrower" style="font-size:14px;font-weight:600;margin-bottom:4px;"></div>
+        <label>Үйлдлийн төрөл</label>
+        <select id="actionType">
+            <option value="phone_call">📞 Утсаар ярих</option>
+            <option value="official_letter">📄 Албан бичиг</option>
+            <option value="meeting">🤝 Уулзалт</option>
+            <option value="note">📝 Тэмдэглэл</option>
+            <option value="promise_letter">📋 Амлалт бичиг</option>
+            <option value="collateral_check">🏠 Барьцаа шалгах</option>
+        </select>
+        <label>Тэмдэглэл</label>
+        <textarea id="actionNote" placeholder="Дэлгэрэнгүй тайлбар бичнэ үү..."></textarea>
+        <label>Үр дүн</label>
+        <select id="actionOutcome">
+            <option value="promise_made">Амлалт авсан</option>
+            <option value="no_answer">Хариу өгөөгүй</option>
+            <option value="payment_made">Төлбөр хийсэн</option>
+            <option value="callback">Дахин холбогдох</option>
+            <option value="transfer_to_taug">ТАУГ-т шилжүүлэх</option>
+        </select>
+        <div class="modal-actions">
+            <button class="btn btn-outline" onclick="closeModal()">Болих</button>
+            <button class="btn btn-primary" onclick="submitAction()">✅ Бүртгэх</button>
+        </div>
+    </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

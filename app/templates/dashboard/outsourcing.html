@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% macro kpi_row(kpis) %}
+<div class="kpi-row">
+{% for k in kpis %}
+    <div class="kpi-card">
+        <div class="kpi-label">{{ k.label }}</div>
+        <div class="kpi-value">{{ k.value }}</div>
+        {% if k.sub %}<div class="kpi-sub">{{ k.sub }}</div>{% endif %}
+    </div>
+{% endfor %}
+</div>
+{% endmacro %}
+
+<div class="locked-notice">🔒 Хувийн мэдээлэл хязгаарлагдсан — Зээлдэгчийн нэр, хаяг, утас зэрэг мэдээлэл харагдахгүй</div>
+
+{{ kpi_row(kpis) }}
+
+<div class="card-panel">
+    <div class="card-header">
+        <h3>📋 Хариуцсан хэрэг</h3>
+        <input class="search-box" placeholder="🔍 Хайх..." oninput="filterTable(this)">
+    </div>
+    <table>
+        <thead><tr>
+            <th>Хэрэг №</th><th>Зээлийн дүн</th><th>Хэтэрсэн хоног</th><th>Цуглуулсан</th><th>Commission</th><th>Төлөв</th>
+        </tr></thead>
+        <tbody>
+        {% for assignment, case, loan in assignments %}
+        <tr>
+            <td><strong>З-{{ "%03d"|format(assignment.id) }}</strong></td>
+            <td>{{ "{:,.0f}".format(loan.amount) }}₮</td>
+            <td>{{ case.days_overdue }}</td>
+            <td>{{ "{:,.0f}".format(assignment.collected_amount) }}₮</td>
+            <td>{{ "{:,.0f}".format(assignment.collected_amount * assignment.commission_rate) }}₮</td>
+            <td><span class="status s-{{ assignment.status }}">{{ assignment.status }}</span></td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

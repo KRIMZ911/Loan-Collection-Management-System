@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% macro kpi_row(kpis) %}
+<div class="kpi-row">
+{% for k in kpis %}
+    <div class="kpi-card">
+        <div class="kpi-label">{{ k.label }}</div>
+        <div class="kpi-value">{{ k.value }}</div>
+        {% if k.sub %}<div class="kpi-sub">{{ k.sub }}</div>{% endif %}
+    </div>
+{% endfor %}
+</div>
+{% endmacro %}
+
+{{ kpi_row(kpis) }}
+
+<div class="card-panel">
+    <div class="card-header"><h3>⏱️ Тайлан бэлтгэх хугацаа</h3><span style="font-size:12px;color:var(--text-muted)">Системийн нөлөөллийн хэмжүүр</span></div>
+    <div class="before-after">
+        <div class="ba-box ba-before"><div class="ba-val">147 цаг</div><div class="ba-label">Өмнөх (сар бүр гар ажил)</div></div>
+        <div class="ba-arrow">→</div>
+        <div class="ba-box ba-after"><div class="ba-val">20 цаг</div><div class="ba-label">Зорилт (автоматжуулсан)</div></div>
+    </div>
+</div>
+
+<div class="grid-2">
+    <div class="card-panel">
+        <div class="card-header"><h3>📈 Сарын төлөлтийн чиг хандлага (сая₮)</h3></div>
+        <div class="bar-chart">
+        {% for i in range(chart_months|length) %}
+            <div class="bar-col">
+                <div class="bar-val">{{ chart_values[i] }}</div>
+                <div class="bar" style="height:{{ (chart_values[i] / 1820 * 140)|int }}px; background:#2563EB;"></div>
+                <div class="bar-label">{{ chart_months[i] }}</div>
+            </div>
+        {% endfor %}
+        </div>
+    </div>
+    <div class="card-panel">
+        <div class="card-header"><h3>📊 Зээл төлүүлэлтийн бүтэц</h3></div>
+        <div class="donut-section">
+            <svg viewBox="0 0 36 36" width="150" height="150">
+                <circle cx="18" cy="18" r="14" fill="none" stroke="#E2E8F0" stroke-width="5"/>
+                <circle cx="18" cy="18" r="14" fill="none" stroke="#10B981" stroke-width="5" stroke-dasharray="23 77" stroke-dashoffset="25" stroke-linecap="round"/>
+                <circle cx="18" cy="18" r="14" fill="none" stroke="#3B82F6" stroke-width="5" stroke-dasharray="35 65" stroke-dashoffset="2" stroke-linecap="round"/>
+                <circle cx="18" cy="18" r="14" fill="none" stroke="#F59E0B" stroke-width="5" stroke-dasharray="15 85" stroke-dashoffset="-33" stroke-linecap="round"/>
+                <circle cx="18" cy="18" r="14" fill="none" stroke="#8B5CF6" stroke-width="5" stroke-dasharray="19 81" stroke-dashoffset="-48" stroke-linecap="round"/>
+                <circle cx="18" cy="18" r="14" fill="none" stroke="#EF4444" stroke-width="5" stroke-dasharray="8 92" stroke-dashoffset="-67" stroke-linecap="round"/>
+            </svg>
+            <div class="donut-legend">
+                <div class="donut-legend-item"><div class="donut-dot" style="background:#10B981"></div><b>23%</b> Эхний дуудлагаар</div>
+                <div class="donut-legend-item"><div class="donut-dot" style="background:#3B82F6"></div><b>35%</b> Албан бичгийн дараа</div>
+                <div class="donut-legend-item"><div class="donut-dot" style="background:#F59E0B"></div><b>15%</b> Амлалт биелүүлсэн</div>
+                <div class="donut-legend-item"><div class="donut-dot" style="background:#8B5CF6"></div><b>19%</b> Хууль зүйн арга хэмжээ</div>
+                <div class="donut-legend-item"><div class="donut-dot" style="background:#EF4444"></div><b>8%</b> Шүүхээр шийдвэрлэсэн</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="grid-2" style="margin-top:16px">
+    <div class="card-panel">
+        <div class="card-header"><h3>🏢 Outsourcing гүйцэтгэл</h3></div>
+        <table>
+            <thead><tr><th>Компани</th><th>Хариуцсан</th><th>Цуглуулсан</th><th>Commission</th></tr></thead>
+            <tbody>
+            {% for o in outsourcing_perf %}
+            <tr><td>{{ o.company }}</td><td>{{ o.total }}</td><td>{{ "{:,.0f}".format(o.collected) }}₮</td><td>{{ "{:,.0f}".format(o.commission) }}₮</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="card-panel">
+        <div class="card-header"><h3>🏦 Салбарын гүйцэтгэл</h3></div>
+        <div class="h-bar-group">
+        {% for b in branch_perf %}
+            <div class="h-bar-item">
+                <div class="h-bar-top"><span>{{ b.branch }}</span><span>{{ b.cases }} хэрэг</span></div>
+                <div class="h-bar-track"><div class="h-bar-fill" style="width:{{ (b.cases / (branch_perf|map(attribute='cases')|max) * 100)|int }}%;background:#3B82F6"></div></div>
+            </div>
+        {% endfor %}
+        </div>
+    </div>
+</div>
+{% endblock %}

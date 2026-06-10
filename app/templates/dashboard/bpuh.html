@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% macro kpi_row(kpis) %}
+<div class="kpi-row">
+{% for k in kpis %}
+    <div class="kpi-card">
+        <div class="kpi-label">{{ k.label }}</div>
+        <div class="kpi-value">{{ k.value }}</div>
+        {% if k.sub %}<div class="kpi-sub">{{ k.sub }}</div>{% endif %}
+    </div>
+{% endfor %}
+</div>
+{% endmacro %}
+
+{% macro status_badge(s) %}
+{% set labels = {'new':'Шинэ','contacted':'Холбогдсон','promise':'Амлалт авсан','no_answer':'Хариу өгөөгүй','transferred':'Шилжүүлсэн','legal':'Хууль зүй','court':'Шүүхэд','outsourced':'Outsourcing','resolved':'Шийдвэрлэсэн'} %}
+<span class="status s-{{ s }}">{{ labels.get(s, s) }}</span>
+{% endmacro %}
+
+{% macro risk_badge(risk) %}
+<span class="risk-badge {{ risk.css_class }}">
+    <span class="risk-score">{{ risk.score }}</span>
+    {{ risk.emoji }} {{ risk.label_mn }}
+</span>
+{% endmacro %}
+
+{% macro risk_legend() %}
+<div class="risk-legend">
+    <span style="font-weight:600">🎯 Эрсдэлийн түвшин:</span>
+    <span class="risk-legend-item"><span class="risk-dot critical"></span> 🔴 Маш өндөр (75+)</span>
+    <span class="risk-legend-item"><span class="risk-dot high"></span> 🟠 Өндөр (50-74)</span>
+    <span class="risk-legend-item"><span class="risk-dot medium"></span> 🟡 Дунд (25-49)</span>
+    <span class="risk-legend-item"><span class="risk-dot low"></span> 🟢 Бага (0-24)</span>
+</div>
+{% endmacro %}
+
+{{ risk_legend() }}
+{{ kpi_row(kpis) }}
+
+<div class="card-panel">
+    <div class="card-header">
+        <h3>📋 Миний хэрэг — эрсдэлээр эрэмбэлсэн</h3>
+        <input class="search-box" placeholder="🔍 Хайх..." oninput="filterTable(this)">
+    </div>
+    <table>
+        <thead><tr>
+            <th>№</th><th>🎯 Эрсдэл</th><th>Зээлдэгч</th><th>Зээлийн дүн</th><th>Хэтэрсэн хоног</th><th>Үлдэгдэл</th><th>Төлөв</th><th>Шуурхай</th><th>Үйлдэл</t
+        </tr></thead>
+        <tbody>
+        {% for case, loan, borrower, risk in scored_cases %}
+        <tr data-case-id="{{ case.id }}">
+            <td>{{ loop.index }}</td>
+            <td>{{ risk_badge(risk) }}</td>
+            <td><strong>{{ borrower.name }}</strong></td>
+            <td>{{ "{:,.0f}".format(loan.amount) }}₮</td>
+            <td>{{ case.days_overdue }}</td>
+            <td>{{ "{:,.0f}".format(loan.balance) }}₮</td>
+            <td>{{ status_badge(case.status) }}</td>
+            <td><div class="quick-actions"><button class="quick-btn quick-btn-call" onclick="quickAction({{ case.id }},'phone_call','callback')" title="Ярисан">📞</button><button class="quick-btn quick-btn-promise" onclick="quickAction({{ case.id }},'phone_call','promise_made')" title="Амлалт">✅</button><button class="quick-btn quick-btn-noanswer" onclick="quickAction({{ case.id }},'phone_call','no_answer')" title="Хариугүй">❌</button></div></td>
+            <td><button class="btn btn-primary btn-sm" onclick="openActionModal({{ case.id }}, '{{ borrower.name }}')">Үйлдэл</button></td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

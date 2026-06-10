@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="mn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CMS — Нэвтрэх</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+<div class="role-page">
+    <div class="role-title">
+        <h1>📊 Зээл Төлүүлэх Удирдлагын Систем</h1>
+        <p>Collection Management System — Нэвтрэх эрхээ сонгоно уу</p>
+    </div>
+    <div class="role-grid">
+        {% for role in roles %}
+        <form method="POST" action="{{ url_for('auth.select_role') }}" style="display:contents;">
+            <input type="hidden" name="role" value="{{ role.id }}">
+            <button type="submit" class="role-card">
+                <div class="role-accent" style="background:{{ role.color }}"></div>
+                <span class="icon">{{ role.icon }}</span>
+                <h3>{{ role.name }}</h3>
+                <div class="sub">{{ role.sub }}</div>
+            </button>
+        </form>
+        {% endfor %}
+    </div>
+</div>
+</body>
+</html>

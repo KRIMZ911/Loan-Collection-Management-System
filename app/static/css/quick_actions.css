@@ -1,0 +1,20 @@
+/* Quick Action Buttons */
+.quick-actions { display:flex; gap:4px; }
+.quick-btn {
+    height:28px; padding:0 8px; font-size:11px;
+    border:none; border-radius:6px; cursor:pointer;
+    transition:all .15s; display:inline-flex;
+    align-items:center; gap:2px; font-weight:600;
+}
+.quick-btn:hover { transform:scale(1.1); }
+.quick-btn-call    { background:#DBEAFE; color:#1D4ED8; }
+.quick-btn-promise { background:#D1FAE5; color:#065F46; }
+.quick-btn-noanswer{ background:#FEE2E2; color:#991B1B; }
+
+/* Row flash animation after quick action */
+@keyframes quickFlash {
+    0%   { background:transparent; }
+    50%  { background:#D1FAE5; }
+    100% { background:transparent; }
+}
+.row-flash td { animation: quickFlash 0.8s ease; }
