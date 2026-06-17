@@ -1,19 +1,23 @@
 """
-Dashboard routes — renders role-specific dashboards with data from DB.
-Risk scoring is applied via the services.scoring module.
+Dashboard routes — FINAL version with SimpleNamespace wrappers.
+Templates stay untouched. Wrappers translate new model attrs to old names.
 """
+
+from types import SimpleNamespace
 from flask import Blueprint, render_template, session, redirect, url_for
 from sqlalchemy import func
 from app import db
 from app.models import (
-    User, Borrower, Loan, CollectionCase,
-    CaseAction, CaseTransfer, OutsourcingAssignment, CommitteeDecision,
+    User, Borrower, Loan, ContactLog, CaseTransfer,
+    OutsourcingAssignment, CommitteeReview, Role,
+    LoanStatus, SegmentType,
 )
 from app.services.scoring import score_cases, RISK_LEVELS
 
+
 dashboard_bp = Blueprint("dashboard", __name__)
 
-# Navigation definitions per role
+
 NAV_ITEMS = {
     "bpuh": [
         {"id": "cases", "icon": "📋", "label": "Миний хэрэг"},
@@ -58,7 +62,6 @@ NAV_ITEMS = {
 
 
 def get_base_context():
-    """Build the shared context passed to every dashboard template."""
     role = session.get("role", "bpuh")
     return {
         "role": role,
@@ -67,350 +70,317 @@ def get_base_context():
         "role_sub": session.get("role_sub", ""),
         "role_color": session.get("role_color", "#2563EB"),
         "nav_items": NAV_ITEMS.get(role, []),
-        "risk_levels": RISK_LEVELS,  # Pass to all templates for legend
+        "risk_levels": RISK_LEVELS,
     }
+
+
+# ── SimpleNamespace wrappers: new model attrs → old template names ──
+
+def _w_case(loan):
+    """Wrap Loan as old CollectionCase for templates."""
+    return SimpleNamespace(
+        id=loan.id,
+        days_overdue=loan.delinquency_days or 0,
+        overdue_amount=float(loan.amount_overdue or 0),
+        status=loan.status.value if loan.status else "active",
+        updated_at=loan.updated_at,
+    )
+
+
+def _w_loan(loan):
+    """Wrap Loan with old attribute names for templates."""
+    return SimpleNamespace(
+        id=loan.id,
+        amount=float(loan.amount_original or 0),
+        balance=float(loan.amount_outstanding or 0),
+        loan_number=loan.loan_account_number,
+        product_type=loan.loan_product.name if loan.loan_product else None,
+        branch=loan.branch.name if loan.branch else "—",
+        interest_rate=float(loan.interest_rate or 0),
+        disbursement_date=loan.disbursement_date,
+        maturity_date=loan.maturity_date,
+    )
+
+
+def _w_borrower(borrower, hide=False):
+    """Wrap Borrower with old attribute names."""
+    if hide:
+        return SimpleNamespace(name="***", register_no="***", phone="***", email="***", address="***")
+    return SimpleNamespace(
+        name=f"{borrower.last_name} {borrower.first_name}",
+        register_no=borrower.register_number,
+        phone=borrower.phone_primary,
+        email=borrower.email,
+        address=borrower.address_residential,
+    )
+
+
+def _w_risk(risk_info):
+    """Flatten risk_info dict into a dot-accessible namespace."""
+    rl = risk_info.get('risk_level', {})
+    return SimpleNamespace(
+        score=risk_info.get('score', 0),
+        css_class=rl.get('css_class', 'risk-low'),
+        emoji=rl.get('emoji', ''),
+        label_mn=rl.get('label_mn', ''),
+        color=rl.get('color', '#16A34A'),
+        level=rl.get('level', 'low'),
+    )
+
+
+def _w_action(cl):
+    """Wrap ContactLog as old CaseAction."""
+    return SimpleNamespace(
+        created_at=cl.contact_date,
+        action_type=cl.contact_type.value if cl.contact_type else 'note',
+        outcome='no_answer' if not cl.was_reached else 'contacted',
+        notes=cl.notes or '',
+    )
+
+
+def _w_transfer(t):
+    """Wrap CaseTransfer with safe attribute access."""
+    return SimpleNamespace(
+        transfer_date=t.transfer_date,
+        to_entity=t.to_entity,
+        reason=t.reason or '',
+        status=t.status.value if t.status else 'pending',
+    )
+
+
+def _pack_scored(scored):
+    """Convert score_cases output to template-friendly 4-tuples."""
+    return [(_w_case(l), _w_loan(l), _w_borrower(b), _w_risk(r)) for l, b, r in scored]
+
+
+def _build_kpis(scored):
+    total = len(scored)
+    total_amount = sum(float(l.amount_overdue or 0) for l, b, r in scored)
+    high_risk = sum(1 for l, b, r in scored if r.get('score', 0) >= 50)
+    return [
+        {"label": "Нийт хэрэг", "value": total, "sub": "Зөрчилтэй зээл"},
+        {"label": "Нийт дүн", "value": f"{total_amount:,.0f} ₮", "sub": "Хэтэрсэн өр"},
+        {"label": "Өндөр эрсдэл", "value": high_risk, "sub": "Эрсдэл 50+"},
+    ]
 
 
 @dashboard_bp.route("/dashboard")
 def dashboard():
-    """Main dashboard — routes to the correct template based on session role."""
     role = session.get("role")
     if not role:
         return redirect(url_for("auth.index"))
-
-    ctx = get_base_context()
-
     builders = {
-        "bpuh": _build_bpuh,
-        "zm": _build_zm,
-        "jdbbg": _build_jdbbg,
-        "taug": _build_taug,
-        "outsourcing": _build_outsourcing,
-        "senior": _build_senior,
-        "mgmt": _build_mgmt,
+        "bpuh": _build_bpuh, "zm": _build_zm, "jdbbg": _build_jdbbg,
+        "taug": _build_taug, "outsourcing": _build_outsourcing,
+        "senior": _build_senior, "mgmt": _build_mgmt,
     }
-    builder = builders.get(role, _build_bpuh)
-    template, data = builder()
-    ctx.update(data)
+    return builders.get(role, _build_bpuh)()
 
-    return render_template(template, **ctx)
-@dashboard_bp.route("/case/<int:case_id>")
-def case_detail(case_id):
-    """Borrower/case detail page."""
+
+@dashboard_bp.route("/case/<int:loan_id>")
+def case_detail(loan_id):
     role = session.get("role")
     if not role:
         return redirect(url_for("auth.index"))
-
-    case = CollectionCase.query.get_or_404(case_id)
-    loan = Loan.query.get(case.loan_id)
-    borrower = Borrower.query.get(loan.borrower_id) if loan else None
-
-    # Get all actions for this case
-    actions = (CaseAction.query
-               .filter_by(case_id=case.id)
-               .order_by(CaseAction.created_at.desc())
-               .all())
-
-    # Get transfers for this case
-    transfers = (CaseTransfer.query
-                 .filter_by(case_id=case.id)
-                 .order_by(CaseTransfer.transfer_date.desc())
-                 .all())
-
-    # Risk score
-    from app.services.scoring import calculate_risk_score
-    from sqlalchemy import func
-    last_action_date = (db.session.query(func.max(CaseAction.created_at))
-                        .filter(CaseAction.case_id == case.id)
-                        .scalar())
-    risk = calculate_risk_score(case, loan, last_action_date)
-
+    loan = Loan.query.get_or_404(loan_id)
+    borrower = Borrower.query.get(loan.borrower_id)
+    hide = (role == "outsourcing")
+    contacts = ContactLog.query.filter_by(loan_id=loan.id).order_by(ContactLog.contact_date.desc()).limit(50).all()
+    transfers = CaseTransfer.query.filter_by(loan_id=loan.id).all()
+    scored = score_cases([(loan, borrower)])
+    ri = scored[0][2] if scored else {}
     ctx = get_base_context()
     ctx.update({
-        "case": case,
-        "loan": loan,
-        "borrower": borrower,
-        "actions": actions,
-        "transfers": transfers,
-        "risk": risk,
+        "loan": _w_loan(loan),
+        "case": _w_case(loan),
+        "borrower": _w_borrower(borrower, hide=hide) if borrower else SimpleNamespace(name="—", register_no="—", phone="—", email="—", address="—"),
+        "risk": _w_risk(ri),
+        "actions": [_w_action(c) for c in contacts],
+        "transfers": [_w_transfer(t) for t in transfers],
     })
     return render_template("dashboard/case_detail.html", **ctx)
 
 
-# ── БПҮХ ──────────────────────────────────────────────────
 def _build_bpuh():
     cases_raw = (
-        db.session.query(CollectionCase, Loan, Borrower)
-        .join(Loan, CollectionCase.loan_id == Loan.id)
+        db.session.query(Loan, Borrower)
         .join(Borrower, Loan.borrower_id == Borrower.id)
-        .filter(Borrower.segment == "consumer")
-        .order_by(CollectionCase.days_overdue.desc())
-        .limit(50)
-        .all()
+        .filter(Borrower.segment == SegmentType.RETAIL)
+        .filter(Loan.delinquency_days > 0)
+        .order_by(Loan.delinquency_days.desc())
+        .limit(50).all()
     )
-
-    # Apply risk scoring (returns sorted by risk, highest first)
-    scored_cases = score_cases(cases_raw)
-
-    total = len(scored_cases)
-    promises = sum(1 for c, l, b, r in scored_cases if c.status == "promise")
-    over90 = sum(1 for c, l, b, r in scored_cases if c.days_overdue > 90)
-    critical = sum(1 for c, l, b, r in scored_cases if r["level"] == "critical")
-
-    return "dashboard/bpuh.html", {
-        "kpis": [
-            {"label": "Нийт хэрэг", "value": total, "sub": "Миний хариуцсан"},
-            {"label": "🔴 Яаралтай", "value": critical, "sub": "Нэн даруй анхаарах"},
-            {"label": "Амлалт авсан", "value": promises, "sub": "Энэ долоо хоногт"},
-            {"label": "Хугацаа >90 хоног", "value": over90, "sub": "Анхаарах шаардлагатай"},
-        ],
-        "scored_cases": scored_cases,
-    }
+    scored = score_cases(cases_raw)
+    ctx = get_base_context()
+    ctx.update({"scored_cases": _pack_scored(scored), "kpis": _build_kpis(scored)})
+    return render_template("dashboard/bpuh.html", **ctx)
 
 
-# ── ЗМ ────────────────────────────────────────────────────
 def _build_zm():
     user = User.query.get(session.get("user_id"))
-    branch = user.branch if user else "Баянзүрх"
-
-    cases_raw = (
-        db.session.query(CollectionCase, Loan, Borrower)
-        .join(Loan, CollectionCase.loan_id == Loan.id)
+    branch_id = user.branch_id if user else None
+    branch_name = user.branch.name if user and user.branch else "—"
+    query = (
+        db.session.query(Loan, Borrower)
         .join(Borrower, Loan.borrower_id == Borrower.id)
-        .filter(Loan.branch == branch)
-        .order_by(CollectionCase.days_overdue.desc())
-        .limit(100)
-        .all()
+        .filter(Loan.delinquency_days > 0)
     )
-
-    scored_cases = score_cases(cases_raw)
-
-    total = len(scored_cases)
-    total_amount = sum(c.overdue_amount for c, l, b, r in scored_cases)
-    transferred = sum(1 for c, l, b, r in scored_cases if c.status == "transferred")
-    critical = sum(1 for c, l, b, r in scored_cases if r["level"] == "critical")
-
-    months = ["1-р сар", "2-р сар", "3-р сар", "4-р сар", "5-р сар", "6-р сар"]
-    payments = [280, 310, 265, 295, 320, 340]
-
-    return "dashboard/zm.html", {
-        "kpis": [
-            {"label": "Нийт зөрчилтэй", "value": total, "sub": f"{branch} салбар"},
-            {"label": "🔴 Яаралтай", "value": critical, "sub": "Нэн даруй анхаарах"},
-            {"label": "Нийт дүн", "value": f"{total_amount/1e9:.1f} тэрбум₮", "sub": "Зөрчилтэй зээлийн дүн"},
-            {"label": "ТАУГ шилжүүлсэн", "value": transferred, "sub": "Энэ сард"},
-        ],
-        "scored_cases": scored_cases,
+    if branch_id:
+        query = query.filter(Loan.branch_id == branch_id)
+    cases_raw = query.order_by(Loan.delinquency_days.desc()).all()
+    scored = score_cases(cases_raw)
+    months = ['1-р сар', '2-р сар', '3-р сар', '4-р сар', '5-р сар', '6-р сар']
+    import random; payments = [random.randint(3, 15) for _ in months]
+    ctx = get_base_context()
+    ctx.update({
+        "scored_cases": _pack_scored(scored),
+        "kpis": _build_kpis(scored),
+        "branch": branch_name,
         "chart_months": months,
         "chart_payments": payments,
-        "branch": branch,
-    }
+    })
+    return render_template("dashboard/zm.html", **ctx)
 
 
-# ── ЖДББГ ─────────────────────────────────────────────────
 def _build_jdbbg():
     cases_raw = (
-        db.session.query(CollectionCase, Loan, Borrower)
-        .join(Loan, CollectionCase.loan_id == Loan.id)
+        db.session.query(Loan, Borrower)
         .join(Borrower, Loan.borrower_id == Borrower.id)
-        .filter(Borrower.segment == "corporate")
-        .order_by(CollectionCase.days_overdue.desc())
-        .all()
+        .filter(Borrower.segment == SegmentType.SMB)
+        .filter(Loan.delinquency_days > 0)
+        .order_by(Loan.delinquency_days.desc()).all()
     )
-
-    scored_cases = score_cases(cases_raw)
-
-    # Group by company
+    scored = score_cases(cases_raw)
+    # Group by borrower name as 'companies'
     companies = {}
-    for c, l, b, r in scored_cases:
-        if b.name not in companies:
-            companies[b.name] = {
-                "cases": [],
-                "total_loans": 0,
-                "delinquent_amount": 0,
-                "worst_risk": r,
-            }
-        companies[b.name]["cases"].append((c, l, b, r))
-        companies[b.name]["total_loans"] += l.amount
-        companies[b.name]["delinquent_amount"] += c.overdue_amount
-        # Track worst risk per company
-        if r["score"] > companies[b.name]["worst_risk"]["score"]:
-            companies[b.name]["worst_risk"] = r
-
-    total_companies = len(companies)
-    total_cases = len(scored_cases)
-    total_amount = sum(c.overdue_amount for c, l, b, r in scored_cases)
-    resolved = sum(1 for c, l, b, r in scored_cases if c.status == "resolved")
-
-    return "dashboard/jdbbg.html", {
-        "kpis": [
-            {"label": "Хариуцсан компани", "value": total_companies},
-            {"label": "Зөрчилтэй зээл", "value": total_cases},
-            {"label": "Нийт дүн", "value": f"{total_amount/1e9:.1f} тэрбум₮"},
-            {"label": "Шийдвэрлэсэн", "value": resolved, "sub": "Энэ улиралд"},
-        ],
-        "companies": companies,
-        "scored_cases": scored_cases,
-    }
+    for loan, borrower, risk_info in scored:
+        name = f"{borrower.last_name} {borrower.first_name}"
+        if name not in companies:
+            companies[name] = SimpleNamespace(
+                worst_risk=_w_risk(risk_info),
+                cases=[],
+                delinquent_amount=0,
+                total_loans=0,
+            )
+        c = companies[name]
+        c.cases.append((_w_case(loan), _w_loan(loan), _w_borrower(borrower), _w_risk(risk_info)))
+        c.delinquent_amount += float(loan.amount_overdue or 0)
+        c.total_loans += 1
+        if risk_info.get('score', 0) > c.worst_risk.score:
+            c.worst_risk = _w_risk(risk_info)
+    ctx = get_base_context()
+    ctx.update({"companies": companies, "kpis": _build_kpis(scored)})
+    return render_template("dashboard/jdbbg.html", **ctx)
 
 
-# ── ТАУГ ──────────────────────────────────────────────────
 def _build_taug():
     cases_raw = (
-        db.session.query(CollectionCase, Loan, Borrower)
-        .join(Loan, CollectionCase.loan_id == Loan.id)
+        db.session.query(Loan, Borrower)
         .join(Borrower, Loan.borrower_id == Borrower.id)
-        .filter(CollectionCase.status.in_(["transferred", "legal", "court", "outsourced"]))
-        .order_by(CollectionCase.updated_at.desc())
-        .all()
+        .filter(Loan.status.in_([
+            LoanStatus.TRANSFERRED_TAUG, LoanStatus.LEGAL,
+            LoanStatus.COURT, LoanStatus.OUTSOURCED,
+        ]))
+        .order_by(Loan.updated_at.desc()).all()
     )
-
-    scored_cases = score_cases(cases_raw)
-
-    transfers = CaseTransfer.query.order_by(CaseTransfer.transfer_date.desc()).limit(20).all()
-
-    total = len(scored_cases)
-    legal = sum(1 for c, l, b, r in scored_cases if c.status == "legal")
-    court = sum(1 for c, l, b, r in scored_cases if c.status == "court")
-    outsourced = sum(1 for c, l, b, r in scored_cases if c.status == "outsourced")
-
-    return "dashboard/taug.html", {
-        "kpis": [
-            {"label": "Хүлээн авсан", "value": total, "sub": "Энэ сард"},
-            {"label": "ТАХ ажилтанд", "value": legal, "sub": "Хуваарилагдсан"},
-            {"label": "Хуулийн фирмд", "value": court},
-            {"label": "Outsourcing", "value": outsourced, "sub": "Барьцаагүй зээл"},
-        ],
-        "scored_cases": scored_cases,
-        "transfers": transfers,
-    }
+    scored = score_cases(cases_raw)
+    ctx = get_base_context()
+    ctx.update({"scored_cases": _pack_scored(scored), "kpis": _build_kpis(scored)})
+    return render_template("dashboard/taug.html", **ctx)
 
 
-# ── OUTSOURCING ───────────────────────────────────────────
 def _build_outsourcing():
-    assignments = (
-        db.session.query(OutsourcingAssignment, CollectionCase, Loan)
-        .join(CollectionCase, OutsourcingAssignment.case_id == CollectionCase.id)
-        .join(Loan, CollectionCase.loan_id == Loan.id)
+    rows = (
+        db.session.query(OutsourcingAssignment, Loan, Borrower)
+        .join(Loan, OutsourcingAssignment.loan_id == Loan.id)
+        .join(Borrower, Loan.borrower_id == Borrower.id)
         .all()
     )
-
-    total = len(assignments)
-    collected = sum(a.collected_amount for a, c, l in assignments)
-    commission = sum(a.collected_amount * a.commission_rate for a, c, l in assignments)
-    completed = sum(1 for a, c, l in assignments if a.status == "completed")
-    success_rate = round((completed / total * 100) if total > 0 else 0)
-
-    return "dashboard/outsourcing.html", {
-        "kpis": [
-            {"label": "Хариуцсан хэрэг", "value": total},
-            {"label": "Цуглуулсан дүн", "value": f"{collected/1e6:.0f} сая₮"},
-            {"label": "Commission", "value": f"{commission/1e6:.1f} сая₮", "sub": "Нийт тооцоо"},
-            {"label": "Амжилтын хувь", "value": f"{success_rate}%", "sub": f"{completed} хэрэг шийдвэрлэсэн"},
-        ],
-        "assignments": [(a, c, l) for a, c, l in assignments],
-    }
+    assignments = [(oa, _w_case(loan), _w_loan(loan)) for oa, loan, b in rows]
+    total_assigned = sum(float(l.amount_overdue or 0) for oa, l, b in rows)
+    total_collected = sum(float(oa.collected_amount or 0) for oa, l, b in rows)
+    kpis = [
+        {"label": "Нийт хэрэг", "value": len(assignments), "sub": "Хуваарилагдсан"},
+        {"label": "Нийт дүн", "value": f"{total_assigned:,.0f} ₮", "sub": "Хэтэрсэн өр"},
+        {"label": "Цуглуулсан", "value": f"{total_collected:,.0f} ₮", "sub": f"{round((total_collected/total_assigned*100) if total_assigned>0 else 0)}%"},
+    ]
+    ctx = get_base_context()
+    ctx.update({"assignments": assignments, "kpis": kpis})
+    return render_template("dashboard/outsourcing.html", **ctx)
 
 
-# ── ЗЭГ АХЛАХ ────────────────────────────────────────────
 def _build_senior():
-    collectors = (
-        db.session.query(
-            User,
-            func.count(CollectionCase.id).label("case_count"),
-        )
-        .join(CollectionCase, CollectionCase.assigned_to == User.id)
-        .filter(User.role.in_(["bpuh", "zm", "jdbbg"]))
-        .group_by(User.id)
-        .all()
+    rows = (
+        db.session.query(User, func.count(Loan.id).label('cc'))
+        .join(Loan, Loan.assigned_to == User.id)
+        .filter(Loan.delinquency_days > 0)
+        .group_by(User.id).all()
     )
-
-    collector_stats = []
-    for user, case_count in collectors:
-        action_count = CaseAction.query.filter_by(user_id=user.id).count()
-        resolved = CollectionCase.query.filter_by(assigned_to=user.id, status="resolved").count()
-        success_rate = round((resolved / case_count * 100) if case_count > 0 else 0)
-        collector_stats.append({
-            "name": user.name,
-            "cases": case_count,
-            "actions": action_count,
-            "success_rate": success_rate,
-            "avg_days": round(2.0 + (100 - success_rate) * 0.03, 1),
-        })
-
-    collector_stats.sort(key=lambda x: x["success_rate"], reverse=True)
-
-    total_collectors = len(collectors)
-    no_action_cases = CollectionCase.query.filter_by(status="new").count()
-
-    return "dashboard/senior.html", {
-        "kpis": [
-            {"label": "Нийт Collector", "value": total_collectors},
-            {"label": "Хугацаандаа хийсэн", "value": "78%", "sub": "Зорилт: 90%"},
-            {"label": "Roll Forward", "value": "12%", "sub": "Сүүлийн сард"},
-            {"label": "Ажилбаргүй хэрэг", "value": no_action_cases, "sub": "Анхаарах шаардлагатай"},
-        ],
-        "collectors": collector_stats,
-    }
+    collectors = []
+    for user, cc in rows:
+        ac = ContactLog.query.filter_by(contacted_by=user.id).count()
+        res = Loan.query.filter_by(assigned_to=user.id, status=LoanStatus.RESOLVED).count()
+        avg_d = db.session.query(func.avg(Loan.delinquency_days)).filter(Loan.assigned_to==user.id, Loan.delinquency_days>0).scalar() or 0
+        collectors.append(SimpleNamespace(
+            name=user.name, cases=cc, actions=ac, resolved=res,
+            success_rate=round((res/cc*100) if cc>0 else 0),
+            avg_days=round(avg_d),
+        ))
+    collectors.sort(key=lambda x: x.success_rate, reverse=True)
+    total_d = Loan.query.filter(Loan.delinquency_days > 0).count()
+    total_a = float(db.session.query(func.sum(Loan.amount_overdue)).filter(Loan.delinquency_days > 0).scalar() or 0)
+    kpis = [
+        {"label": "Нийт хэрэг", "value": total_d, "sub": "Зөрчилтэй"},
+        {"label": "Нийт дүн", "value": f"{total_a:,.0f} ₮", "sub": "Хэтэрсэн өр"},
+        {"label": "Ажилтан", "value": len(collectors), "sub": "Хянагч"},
+    ]
+    ctx = get_base_context()
+    ctx.update({"collectors": collectors, "kpis": kpis})
+    return render_template("dashboard/senior.html", **ctx)
 
 
-# ── УДИРДЛАГА ─────────────────────────────────────────────
 def _build_mgmt():
-    total_cases = CollectionCase.query.count()
-    total_amount = db.session.query(func.sum(CollectionCase.overdue_amount)).scalar() or 0
-    court = CollectionCase.query.filter_by(status="court").count()
-    court_pct = round((court / total_cases * 100) if total_cases > 0 else 0)
-
-    os_data = (
-        db.session.query(
-            OutsourcingAssignment.company_name,
-            func.count(OutsourcingAssignment.id).label("total"),
-            func.sum(OutsourcingAssignment.collected_amount).label("collected"),
-        )
-        .group_by(OutsourcingAssignment.company_name)
-        .all()
+    total_loans = Loan.query.count()
+    total_d = Loan.query.filter(Loan.delinquency_days > 0).count()
+    total_a = float(db.session.query(func.sum(Loan.amount_overdue)).filter(Loan.delinquency_days > 0).scalar() or 0)
+    resolved = Loan.query.filter_by(status=LoanStatus.RESOLVED).count()
+    court = Loan.query.filter_by(status=LoanStatus.COURT).count()
+    court_pct = round((court/total_d*100) if total_d>0 else 0)
+    kpis = [
+        {"label": "Нийт зээл", "value": total_loans, "sub": "Нийт багц"},
+        {"label": "Зөрчилтэй", "value": total_d, "sub": f"{round(total_d/total_loans*100) if total_loans>0 else 0}%"},
+        {"label": "Нийт дүн", "value": f"{total_a:,.0f} ₮", "sub": "Хэтэрсэн өр"},
+        {"label": "Шүүх", "value": court, "sub": f"{court_pct}%"},
+    ]
+    months = ['1-р сар','2-р сар','3-р сар','4-р сар','5-р сар','6-р сар']
+    import random; chart_values = [random.randint(5,30) for _ in months]
+    # Outsourcing perf
+    os_rows = (
+        db.session.query(OutsourcingAssignment.company_name, func.count(OutsourcingAssignment.id), func.sum(OutsourcingAssignment.collected_amount))
+        .group_by(OutsourcingAssignment.company_name).all()
     )
-
-    outsourcing_perf = []
-    for company, total, collected in os_data:
-        outsourcing_perf.append({
-            "company": company,
-            "total": total,
-            "collected": collected or 0,
-            "commission": round((collected or 0) * 0.10),
-        })
-
-    branch_data = (
-        db.session.query(
-            Loan.branch,
-            func.count(CollectionCase.id).label("total"),
-            func.sum(CollectionCase.overdue_amount).label("amount"),
-        )
-        .join(Loan, CollectionCase.loan_id == Loan.id)
-        .group_by(Loan.branch)
-        .all()
+    outsourcing_perf = [SimpleNamespace(company=n, total=c, collected=float(s or 0), commission=round(float(s or 0)*0.1)) for n,c,s in os_rows]
+    # Branch perf
+    from app.models import Branch
+    br_rows = (
+        db.session.query(Branch.name, func.count(Loan.id))
+        .join(Loan, Loan.branch_id == Branch.id)
+        .filter(Loan.delinquency_days > 0)
+        .group_by(Branch.name).all()
     )
-
-    branch_perf = []
-    for branch, count, amount in branch_data:
-        branch_perf.append({
-            "branch": branch,
-            "cases": count,
-            "amount": amount or 0,
-        })
-
-    chart_months = ["1-р сар", "2-р сар", "3-р сар", "4-р сар", "5-р сар", "6-р сар"]
-    chart_values = [1200, 1350, 1100, 1450, 1580, 1820]
-
-    return "dashboard/mgmt.html", {
-        "kpis": [
-            {"label": "Нийт зөрчилтэй", "value": f"{total_cases:,}", "sub": "Бүх салбар"},
-            {"label": "Нийт дүн", "value": f"{total_amount/1e9:.1f} тэрбум₮"},
-            {"label": "Эхний дуудлагаар төлсөн", "value": "23%", "sub": "Зорилт: 30%"},
-            {"label": "Шүүхэд шилжсэн", "value": f"{court_pct}%", "sub": f"{court} хэрэг"},
-        ],
+    branch_perf = [SimpleNamespace(branch=n, cases=c) for n,c in br_rows]
+    ctx = get_base_context()
+    ctx.update({
+        "kpis": kpis,
+        "chart_months": months,
+        "chart_values": chart_values,
         "outsourcing_perf": outsourcing_perf,
         "branch_perf": branch_perf,
-        "chart_months": chart_months,
-        "chart_values": chart_values,
-    }
+        "total_cases": total_d,
+        "total_amount": total_a,
+        "resolved": resolved,
+        "court": court,
+        "court_pct": court_pct,
+    })
+    return render_template("dashboard/mgmt.html", **ctx)
+

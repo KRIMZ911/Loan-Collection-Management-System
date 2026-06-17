@@ -1,10 +1,17 @@
 """
 Authentication routes — role selection (no real auth for prototype).
+
+Updated for new models.py:
+  - User.role is now a relationship to Role model, not a string
+  - Find users by Role.dashboard_code instead of User.role string
 """
+
 from flask import Blueprint, render_template, request, redirect, url_for, session
-from app.models import User
+from app.models import User, Role
+
 
 auth_bp = Blueprint("auth", __name__)
+
 
 # Role definitions for the selector page
 ROLES = [
@@ -31,22 +38,31 @@ def select_role():
     if not role:
         return redirect(url_for("auth.index"))
 
-    # Find the first user matching this role
-    user = User.query.filter_by(role=role, is_active=True).first()
-    if user:
-        session["role"] = role
-        session["user_id"] = user.id
-        session["user_name"] = user.name
-    else:
-        session["role"] = role
-        session["user_id"] = None
-        session["user_name"] = "Зочин"
+    # Find role info from ROLES list
+    role_info = next((r for r in ROLES if r['id'] == role), None)
+    if not role_info:
+        return redirect(url_for("auth.index"))
 
-    # Store role metadata for templates
-    role_info = next((r for r in ROLES if r["id"] == role), ROLES[0])
+    # Find a user with this dashboard_code via the Role relationship
+    user = (
+        User.query
+        .join(Role, User.role_id == Role.id)
+        .filter(Role.dashboard_code == role)
+        .first()
+    )
+
+    # Set session
+    session["role"] = role
     session["role_name"] = role_info["name"]
     session["role_sub"] = role_info["sub"]
     session["role_color"] = role_info["color"]
+
+    if user:
+        session["user_id"] = user.id
+        session["user_name"] = user.name
+    else:
+        session["user_id"] = None
+        session["user_name"] = "Зочин"
 
     return redirect(url_for("dashboard.dashboard"))
 
@@ -56,3 +72,4 @@ def logout():
     """Clear session and return to role selector."""
     session.clear()
     return redirect(url_for("auth.index"))
+
