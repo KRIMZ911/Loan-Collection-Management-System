@@ -1,19 +1,20 @@
 """
 =============================================================================
-Collection System — Database Seed Script
+Collection System — Database Seeder (UPDATED for new fields)
 =============================================================================
-Populates the database with:
-  - Reference data (segments, regions, branches, roles, products, source systems)
-  - 15 escalation rules from File 1
-  - Test users (1+ per dashboard type)
-  - 200 borrowers with realistic Mongolian names
-  - 300+ loans with varied delinquency states
-  - 500+ contact logs, delinquency history, actions, committee reviews
-  - Outsourcing assignments, transfers, documents
+Populates the database with realistic test data including all 34 new fields
+from BPUH Excel reports + the new DepositAccount table.
+
+CHANGES IN THIS VERSION:
+  - Borrower: workplace_name, phone_home, phone_work
+  - Loan: 22 new fields (interest breakdown, off-balance, model calc, etc.)
+  - Collateral: coverage_percent, is_unregistered
+  - NEW: DepositAccount table — 3-5 accounts per borrower
+  - Sequential counters to prevent duplicate key collisions
 
 Usage:
-  cd collection-system
-  python -m app.seed          # or: python app/seed.py
+  cd C:\\Users\\bers.b\\Projects.Bers\\collection-system
+  python -m app.seed
 =============================================================================
 """
 
@@ -23,14 +24,14 @@ import os
 from datetime import datetime, date, timedelta, timezone
 from decimal import Decimal
 
-# Ensure the project root is on sys.path so `from app import ...` works
-# when running as `python app/seed.py` from the project root.
+# Ensure project root is on sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from app import db
 from app.models import (
     Segment, Region, Branch, Role, User, Permission,
     LoanProduct, SourceSystem, Borrower, RelatedParty, Loan, Collateral,
+    DepositAccount,                                                 # NEW
     DelinquencyHistory, ContactLog, EscalationRule, ActionTaken,
     CommitteeReview, ClassificationHistory, Notification, Document,
     InsuranceCase, Restructure, CaseTransfer, OutsourcingAssignment, AuditLog,
@@ -40,25 +41,33 @@ from app.models import (
     NotificationType, NotificationChannel, NotificationStatus, PermissionType,
     InsuranceDecision, RestructureDecision, EscalationFrequency,
     TransferStatus, OutsourcingStatus,
+    DepositAccountType,                                            # NEW
 )
 
 
 # ============================================================================
-# HELPERS
+# COUNTERS & HELPERS
 # ============================================================================
+
+_loan_counter = 0
+_cif_counter = 0
+_account_counter = 0   # NEW for deposit accounts
+
 
 def _utcnow():
     return datetime.now(timezone.utc)
 
+
 def _random_date(start_year=2020, end_year=2025):
-    """Random date between start_year and end_year."""
     start = date(start_year, 1, 1)
     end = date(end_year, 12, 31)
     delta = (end - start).days
     return start + timedelta(days=random.randint(0, delta))
 
+
 def _random_phone():
     return f"99{random.randint(100000, 999999)}"
+
 
 def _random_register():
     letters = "АБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЭЮЯ"
@@ -67,27 +76,35 @@ def _random_register():
     num = random.randint(10000000, 99999999)
     return f"{letter1}{letter2}{num}"
 
-# NEW — guaranteed unique
-_cif_counter = 0
+
 def _random_cif():
     global _cif_counter
     _cif_counter += 1
     return f"CIF{_cif_counter:06d}"
 
-# NEW — guaranteed unique
-_loan_counter = 0
+
 def _random_loan_number():
     global _loan_counter
     _loan_counter += 1
     return f"LN{_loan_counter:07d}"
 
 
+def _random_deposit_account_number():
+    global _account_counter
+    _account_counter += 1
+    return f"DA{_account_counter:08d}"
+
+
 def _random_contract():
     return f"GR-{random.randint(2020, 2025)}-{random.randint(10000, 99999)}"
 
 
+def _random_off_balance_account():
+    return f"OB{random.randint(10000000, 99999999)}"
+
+
 # ============================================================================
-# REFERENCE DATA SEEDERS
+# REFERENCE DATA SEEDERS (mostly unchanged)
 # ============================================================================
 
 def seed_segments():
@@ -98,12 +115,12 @@ def seed_segments():
     ]
     db.session.add_all(segments)
     db.session.flush()
-    print(f"  ✅ {len(segments)} segments created")
+    print(f"  ✅ {len(segments)} segments")
     return {s.segment_type: s for s in segments}
 
 
 def seed_regions(segments):
-    """Create 5 regions."""
+    """Create 5 regional groupings."""
     regions_data = [
         ("Төв бүс", SegmentType.RETAIL),
         ("Зүүн бүс", SegmentType.RETAIL),
@@ -117,14 +134,13 @@ def seed_regions(segments):
         regions.append(r)
     db.session.add_all(regions)
     db.session.flush()
-    print(f"  ✅ {len(regions)} regions created")
+    print(f"  ✅ {len(regions)} regions")
     return regions
 
 
 def seed_branches(regions):
     """Create 15 branches across regions."""
     branch_data = [
-        # (name, code, region_index)
         ("Баянзүрх салбар", "BZR", 0),
         ("Сүхбаатар салбар", "SKB", 0),
         ("Чингэлтэй салбар", "CHG", 0),
@@ -152,14 +168,13 @@ def seed_branches(regions):
         branches.append(b)
     db.session.add_all(branches)
     db.session.flush()
-    print(f"  ✅ {len(branches)} branches created")
+    print(f"  ✅ {len(branches)} branches")
     return branches
 
 
 def seed_roles():
     """Create all 28 roles with dashboard routing."""
     roles_data = [
-        # (code, name_mn, name_en, dashboard_code)
         ("retail_hm", "Retail харилцааны менежер", "Retail Relationship Manager", "zm"),
         ("smb_hm", "SMB харилцааны менежер", "SMB Relationship Manager", "zm"),
         ("zm_research", "Зээлийн мэргэжилтэн (судалгаа)", "Loan Specialist (Research)", "zm"),
@@ -195,14 +210,13 @@ def seed_roles():
         roles.append(r)
     db.session.add_all(roles)
     db.session.flush()
-    print(f"  ✅ {len(roles)} roles created")
+    print(f"  ✅ {len(roles)} roles")
     return {r.code: r for r in roles}
 
 
 def seed_users(roles, branches):
-    """Create test users — at least 1 per dashboard type + extras."""
+    """Create test users."""
     users_data = [
-        # (name, role_code, branch_index, username)
         ("Б. Батбаяр", "process_control", 0, "batbayar"),
         ("О. Оюунчимэг", "process_control", 1, "oyuunchimeg"),
         ("Г. Ганбат", "zm_control", 0, "ganbat"),
@@ -244,14 +258,13 @@ def seed_users(roles, branches):
         users.append(u)
     db.session.add_all(users)
     db.session.flush()
-    print(f"  ✅ {len(users)} users created")
+    print(f"  ✅ {len(users)} users")
     return users
 
 
 def seed_loan_products(segments):
     """Create 12 loan products."""
     products_data = [
-        # (name, category, segment_type, is_digital, auto_sms_day)
         ("Цалингийн зээл", "Хэрэглээ", SegmentType.RETAIL, False, None),
         ("Тэтгэврийн зээл", "Хэрэглээ", SegmentType.RETAIL, False, None),
         ("Хэрэглээний зээл", "Хэрэглээ", SegmentType.RETAIL, False, None),
@@ -275,12 +288,12 @@ def seed_loan_products(segments):
         products.append(p)
     db.session.add_all(products)
     db.session.flush()
-    print(f"  ✅ {len(products)} loan products created")
+    print(f"  ✅ {len(products)} loan products")
     return products
 
 
 def seed_source_systems():
-    """Create 12 source systems from File 1 C17 and File 2 C14."""
+    """Create 12 source systems."""
     systems_data = [
         ("grapebank_delinquency", "GrapeBank: Өр үүссэн зээлийн мэдээ - Шинэ"),
         ("grapebank_repayment", "Грэйпбанк: Эргэн төлөлтийн мэдээ"),
@@ -301,14 +314,13 @@ def seed_source_systems():
         systems.append(s)
     db.session.add_all(systems)
     db.session.flush()
-    print(f"  ✅ {len(systems)} source systems created")
+    print(f"  ✅ {len(systems)} source systems")
     return systems
 
 
 def seed_escalation_rules():
     """Load the 15-step escalation ladder from File 1."""
     rules_data = [
-        # (step, product_scope, day_start, day_end, reg_clause, required_action, frequency, responsible, auto_sms, auto_email, visit, committee, taug)
         (1, "Бүх хэрэглээний зээл", 1, 20, "4.3",
          "Зээлдэгчтэй холбогдож, шалтгаан тодруулж, зөрчил арилгах. Тайлан татаж хадгалах.",
          EscalationFrequency.DAILY, "БПҮХ", False, False, False, False, False),
@@ -376,15 +388,15 @@ def seed_escalation_rules():
         rules.append(r)
     db.session.add_all(rules)
     db.session.flush()
-    print(f"  ✅ {len(rules)} escalation rules created")
+    print(f"  ✅ {len(rules)} escalation rules")
     return rules
 
 
+
 # ============================================================================
-# DATA GENERATORS
+# DATA POOLS
 # ============================================================================
 
-# Name pools
 LAST_NAMES = [
     "Батсүх", "Дорж", "Ганбаатар", "Оюун", "Мөнх", "Энх", "Нар", "Цэрэн",
     "Бат", "Сүх", "Хүрэл", "Болд", "Тамир", "Сар", "Ган", "Дамдин",
@@ -414,24 +426,62 @@ ADDRESSES = [
     "Өмнөговь аймаг, Даланзадгад сум",
 ]
 
+# 🆕 Workplace names pool
+WORKPLACES = [
+    "Голомт банк", "Хан банк", "Капитрон банк", "ХААН банк", "Төрийн банк",
+    "Эрчим хүчний компани", "МКС холдинг", "Тавантолгой ХК",
+    "Эрдэнэт уулын баяжуулах үйлдвэр", "Цахилгаан холбоо", "Монгол шуудан ХХК",
+    "АНУ ХХК", "Бодь интернэшнл", "Мобиком корпораци", "Юнител",
+    "Гэгээ цемент", "Шинэ толь", "Тэнгэр компани",
+    "Дархан төмөрлөгийн үйлдвэр", "Уламжлал ХХК", "Алтан хайчин",
+    "Их сургууль", "Эмнэлэг", "Засгийн газрын байгууллага",
+    "Жижиг дунд бизнес эрхлэгч", "Гэр бүлийн бизнес", "Тэтгэвэрт", "Хувиараа ажилладаг",
+]
+
+# 🆕 GrapeBank notes pool
+GB_NOTES = [
+    "Зээлдэгч төлбөрийн чадваргүй болсон",
+    "Цалин хоцорсон",
+    "Шилжүүлгийн алдаа гарсан",
+    "Хүүхэд төрсний амралттай",
+    "Эрүүл мэндийн асуудалтай",
+    "Гэр бүлийн нөхцөл байдал хүндэрсэн",
+    "Бизнес зогссон",
+    "Гадаадад явсан",
+    "Уулзалт товлогдсон",
+    "ТАУГ-т шилжүүлэх материал бэлтгэгдэж байна",
+    "Албан мэдэгдэл хүргүүлсэн",
+    "Зээлдэгчтэй холбогдох боломжгүй",
+    "Барьцаа хөрөнгөтэй танилцсан",
+    "Цалингийн өдрөөр төлнө гэсэн",
+    None, None, None,  # some have no notes
+]
+
+
+# ============================================================================
+# BORROWERS, LOANS, COLLATERAL (UPDATED with new fields)
+# ============================================================================
 
 def seed_borrowers_and_loans(branches, products, users, segments):
-    """Create 200 borrowers with 300+ loans in varied delinquency states."""
-    print("  📝 Creating borrowers and loans...")
+    """Create 200 borrowers with 300+ loans, INCLUDING all 25 new fields."""
+    print("  📝 Creating borrowers and loans with new fields...")
 
-    # Separate retail and business products
     retail_products = [p for p in products if p.segment_id == segments[SegmentType.RETAIL].id]
     smb_products = [p for p in products if p.segment_id == segments[SegmentType.SMB].id]
 
-    # Users that can be assigned loans
     assignable_users = [u for u in users if u.role.code in (
         "process_control", "zm_control", "zm_research", "retail_hm", "smb_hm"
     )]
+    # 🆕 Pools for new staff fields
+    analyst_users = [u for u in users if u.role.code in ("zm_research", "risk_analyst", "senior_analyst")]
+    hm_users = [u for u in users if u.role.code in ("retail_hm", "smb_hm", "cust_service")]
 
     all_borrowers = []
     all_loans = []
     all_collaterals = []
     all_related = []
+
+    today = date.today()
 
     for i in range(200):
         is_retail = random.random() < 0.70
@@ -455,13 +505,17 @@ def seed_borrowers_and_loans(branches, products, users, segments):
             is_deceased=random.random() < 0.01,
             segment=seg_type,
             branch_id=branch.id,
+            # 🆕 NEW FIELDS
+            workplace_name=random.choice(WORKPLACES) if random.random() < 0.6 else None,
+            phone_home=_random_phone() if random.random() < 0.5 else None,
+            phone_work=_random_phone() if random.random() < 0.4 else None,
         )
         all_borrowers.append(borrower)
 
-        # Add related parties for some borrowers
+        # Related parties (unchanged)
         if random.random() < 0.3:
             rp = RelatedParty(
-                borrower_id=0,  # will be set after flush
+                borrower_id=0,
                 party_type=random.choice(list(PartyType)),
                 name=f"{random.choice(LAST_NAMES)} {random.choice(FIRST_NAMES)}",
                 register_number=_random_register(),
@@ -474,15 +528,13 @@ def seed_borrowers_and_loans(branches, products, users, segments):
     db.session.add_all(all_borrowers)
     db.session.flush()
 
-    # Fix related party borrower_ids
     for borr_idx, rp in all_related:
         rp.borrower_id = all_borrowers[borr_idx].id
     if all_related:
         db.session.add_all([rp for _, rp in all_related])
         db.session.flush()
 
-    # Create loans
-    today = date.today()
+    # Create loans with ALL new fields
     for borrower in all_borrowers:
         is_retail = borrower.segment == SegmentType.RETAIL
         prods = retail_products if is_retail else smb_products
@@ -491,7 +543,7 @@ def seed_borrowers_and_loans(branches, products, users, segments):
         for _ in range(num_loans):
             product = random.choice(prods)
 
-            # Amount ranges
+            # Amount based on product
             if product.category == "Бизнес":
                 amount = Decimal(random.randint(50_000_000, 500_000_000))
             elif product.name in ("Ипотекийн зээл",):
@@ -539,12 +591,54 @@ def seed_borrowers_and_loans(branches, products, users, segments):
             elif days >= 21: escalation_stage = 7
             elif days >= 1: escalation_stage = 1
 
-            # Priority from days
             if days >= 91: priority = "high"
             elif days >= 21: priority = "medium"
             else: priority = "low"
 
             assigned_user = random.choice(assignable_users)
+
+            # 🆕 NEW FIELD VALUES
+
+            # Group A: staff assignments
+            assigned_analyst = random.choice(analyst_users) if analyst_users else None
+            assigned_hm = random.choice(hm_users) if hm_users else None
+
+            # Group B: tracking dates
+            theoretical_bal = outstanding * Decimal("1.05") if outstanding else None
+            last_pay_date = (today - timedelta(days=days)) if days > 0 else today - timedelta(days=random.randint(0, 30))
+            review_dt = today + timedelta(days=random.randint(7, 60))
+            gb_n = random.choice(GB_NOTES) if days > 0 else None
+
+            # Group C: overdue breakdown (only if delinquent)
+            if days > 0 and overdue > 0:
+                over_principal = Decimal(int(overdue * Decimal("0.70")))
+                over_interest = Decimal(int(overdue * Decimal("0.15")))
+                over_commission = Decimal(int(overdue * Decimal("0.05")))
+                over_penalty = Decimal(int(overdue * Decimal("0.10")))
+            else:
+                over_principal = over_interest = over_commission = over_penalty = None
+
+            # Group D: accrued interest
+            if days > 0 and outstanding:
+                accrued_principal = outstanding * Decimal("0.001") * Decimal(days)
+                accrued_commission = outstanding * Decimal("0.0003") * Decimal(days)
+                accrued_penalty = outstanding * Decimal("0.0002") * Decimal(days)
+            else:
+                accrued_principal = accrued_commission = accrued_penalty = None
+
+            # Group E: off-balance (only for 90+ day cases)
+            if days >= 90:
+                off_bal_account = _random_off_balance_account()
+                off_bal_principal = accrued_principal / 2 if accrued_principal else None
+                off_bal_commission = accrued_commission / 2 if accrued_commission else None
+                off_bal_penalty = accrued_penalty / 2 if accrued_penalty else None
+            else:
+                off_bal_account = None
+                off_bal_principal = off_bal_commission = off_bal_penalty = None
+
+            # Group F: model calculation
+            model_date = today - timedelta(days=random.randint(0, 30))
+            model_value = Decimal(str(round(random.uniform(20, 95), 2)))
 
             loan = Loan(
                 borrower_id=borrower.id,
@@ -574,10 +668,34 @@ def seed_borrowers_and_loans(branches, products, users, segments):
                 assigned_to=assigned_user.id,
                 assigned_zm_id=assigned_user.id,
                 source_system="grapebank_delinquency",
+                # 🆕 NEW FIELDS
+                assigned_analyst_id=assigned_analyst.id if assigned_analyst else None,
+                assigned_hm_id=assigned_hm.id if assigned_hm else None,
+                theoretical_balance=theoretical_bal,
+                last_payment_date=last_pay_date,
+                review_date=review_dt,
+                gb_notes=gb_n,
+                overdue_principal=over_principal,
+                overdue_principal_days=days if days > 0 else None,
+                overdue_interest=over_interest,
+                overdue_interest_days=days if days > 0 else None,
+                overdue_commission_interest=over_commission,
+                overdue_commission_days=days if days > 0 else None,
+                overdue_penalty_interest=over_penalty,
+                overdue_penalty_days=days if days > 0 else None,
+                accrued_principal_interest=accrued_principal,
+                accrued_commission_interest=accrued_commission,
+                accrued_penalty_interest=accrued_penalty,
+                off_balance_account_number=off_bal_account,
+                off_balance_principal_interest=off_bal_principal,
+                off_balance_commission_interest=off_bal_commission,
+                off_balance_penalty_interest=off_bal_penalty,
+                model_calculation_date=model_date,
+                model_calculation_value=model_value,
             )
             all_loans.append(loan)
 
-            # Collateral for certain products
+            # Collateral with new fields
             if product.name in ("Ипотекийн зээл", "Автомашины зээл", "Бизнесийн зээл") or random.random() < 0.15:
                 ctype = {
                     "Ипотекийн зээл": CollateralType.REAL_ESTATE,
@@ -586,7 +704,7 @@ def seed_borrowers_and_loans(branches, products, users, segments):
                 }.get(product.name, random.choice(list(CollateralType)))
 
                 coll = Collateral(
-                    loan_id=0,  # set after flush
+                    loan_id=0,
                     borrower_id=borrower.id,
                     collateral_type=ctype,
                     description=f"{ctype.value} барьцаа",
@@ -594,35 +712,101 @@ def seed_borrowers_and_loans(branches, products, users, segments):
                     valuation_date=_random_date(2022, 2025),
                     status=CollateralStatus.ACTIVE,
                     needs_revaluation=days > 120,
+                    # 🆕 NEW FIELDS
+                    coverage_percent=Decimal(str(round(random.uniform(80, 150), 2))),
+                    is_unregistered=random.random() < 0.05,
                 )
                 all_collaterals.append((len(all_loans) - 1, coll))
 
     db.session.add_all(all_loans)
     db.session.flush()
 
-    # Fix collateral loan_ids
     for loan_idx, coll in all_collaterals:
         coll.loan_id = all_loans[loan_idx].id
     if all_collaterals:
         db.session.add_all([c for _, c in all_collaterals])
         db.session.flush()
 
-    print(f"  ✅ {len(all_borrowers)} borrowers created")
-    print(f"  ✅ {len(all_loans)} loans created")
-    print(f"  ✅ {len(all_collaterals)} collateral records created")
+    print(f"  ✅ {len(all_borrowers)} borrowers created (with workplace/phones)")
+    print(f"  ✅ {len(all_loans)} loans created (with all 22 new fields)")
+    print(f"  ✅ {len(all_collaterals)} collaterals created (with coverage_percent)")
     print(f"  ✅ {len(all_related)} related parties created")
     return all_borrowers, all_loans
 
 
+# ============================================================================
+# 🆕 NEW: DEPOSIT ACCOUNTS
+# ============================================================================
+
+def seed_deposit_accounts(borrowers):
+    """Create 1-4 deposit accounts per borrower (primary payment + savings/current)."""
+    print("  📝 Creating deposit accounts...")
+    today = date.today()
+    all_accounts = []
+
+    for borrower in borrowers:
+        # Every borrower gets 1 primary payment account
+        primary = DepositAccount(
+            borrower_id=borrower.id,
+            account_number=_random_deposit_account_number(),
+            account_type=DepositAccountType.PAYMENT,
+            balance=Decimal(random.randint(0, 5_000_000)),
+            currency=random.choices(["MNT", "USD", "EUR"], weights=[90, 8, 2])[0],
+            is_frozen=random.random() < 0.03,
+            is_primary_payment=True,
+            opened_date=_random_date(2018, 2024),
+            last_activity_date=today - timedelta(days=random.randint(0, 60)),
+        )
+        all_accounts.append(primary)
+
+        # 0-2 savings accounts
+        for _ in range(random.choices([0, 1, 2], weights=[40, 40, 20])[0]):
+            savings = DepositAccount(
+                borrower_id=borrower.id,
+                account_number=_random_deposit_account_number(),
+                account_type=DepositAccountType.SAVINGS,
+                balance=Decimal(random.randint(0, 50_000_000)),
+                currency=random.choices(["MNT", "USD"], weights=[85, 15])[0],
+                is_frozen=random.random() < 0.02,
+                is_primary_payment=False,
+                opened_date=_random_date(2018, 2024),
+                last_activity_date=today - timedelta(days=random.randint(0, 180)),
+            )
+            all_accounts.append(savings)
+
+        # 0-1 current account
+        if random.random() < 0.3:
+            current = DepositAccount(
+                borrower_id=borrower.id,
+                account_number=_random_deposit_account_number(),
+                account_type=DepositAccountType.CURRENT,
+                balance=Decimal(random.randint(0, 10_000_000)),
+                currency="MNT",
+                is_frozen=False,
+                is_primary_payment=False,
+                opened_date=_random_date(2018, 2024),
+                last_activity_date=today - timedelta(days=random.randint(0, 30)),
+            )
+            all_accounts.append(current)
+
+    db.session.add_all(all_accounts)
+    db.session.flush()
+    print(f"  ✅ {len(all_accounts)} deposit accounts created")
+    return all_accounts
+
+
+# ============================================================================
+# CONTACT LOGS, HISTORY, ACTIONS (unchanged)
+# ============================================================================
+
 def seed_contact_logs(loans, users):
-    """Create 500+ contact log entries for delinquent loans."""
+    """Create contact log entries for delinquent loans."""
     print("  📝 Creating contact logs...")
     contact_users = [u for u in users if u.role.code in ("process_control", "zm_control")]
     delinquent = [l for l in loans if l.delinquency_days > 0]
 
     logs = []
     for loan in delinquent:
-        # 1-5 contact attempts per delinquent loan
         num_contacts = random.randint(1, min(5, max(1, loan.delinquency_days // 5)))
         for attempt in range(num_contacts):
             days_ago = random.randint(0, min(30, loan.delinquency_days))
@@ -710,7 +894,6 @@ def seed_actions_and_extras(loans, users):
     reviews = []
 
     for loan in delinquent:
-        # Actions — 1-3 per delinquent loan
         num_actions = random.randint(1, min(3, max(1, loan.delinquency_days // 10)))
         for _ in range(num_actions):
             a = ActionTaken(
@@ -727,7 +910,6 @@ def seed_actions_and_extras(loans, users):
             )
             actions.append(a)
 
-        # Transfers for 60+ day loans
         if loan.delinquency_days >= 60 and random.random() < 0.5:
             t = CaseTransfer(
                 loan_id=loan.id,
@@ -739,7 +921,6 @@ def seed_actions_and_extras(loans, users):
             )
             transfers.append(t)
 
-        # Outsourcing for 180+ day unsecured loans
         if loan.delinquency_days >= 180 and random.random() < 0.3:
             o = OutsourcingAssignment(
                 loan_id=loan.id,
@@ -751,7 +932,6 @@ def seed_actions_and_extras(loans, users):
             )
             outsourcings.append(o)
 
-        # Committee reviews for 30+ day loans
         if loan.delinquency_days >= 30 and random.random() < 0.4:
             r = CommitteeReview(
                 loan_id=loan.id,
@@ -781,13 +961,13 @@ def seed_actions_and_extras(loans, users):
 
 
 # ============================================================================
-# MAIN SEED FUNCTION
+# MAIN SEED
 # ============================================================================
 
 def seed():
     """Run all seeders in order."""
     print("\n" + "=" * 60)
-    print("🌱 SEEDING DATABASE")
+    print("🌱 SEEDING DATABASE (UPDATED with new fields)")
     print("=" * 60)
 
     print("\n📦 Reference data...")
@@ -798,10 +978,13 @@ def seed():
     users = seed_users(roles, branches)
     products = seed_loan_products(segments)
     seed_source_systems()
-    rules = seed_escalation_rules()
+    seed_escalation_rules()
 
     print("\n📦 Core data...")
     borrowers, loans = seed_borrowers_and_loans(branches, products, users, segments)
+
+    print("\n📦 Deposit accounts (NEW)...")
+    seed_deposit_accounts(borrowers)
 
     print("\n📦 Activity data...")
     seed_contact_logs(loans, users)
@@ -814,36 +997,37 @@ def seed():
     print("✅ DATABASE SEEDED SUCCESSFULLY!")
     print("=" * 60)
 
-    # Print summary
     print(f"\n📊 Summary:")
-    print(f"   Segments:       {Segment.query.count()}")
-    print(f"   Regions:        {Region.query.count()}")
-    print(f"   Branches:       {Branch.query.count()}")
-    print(f"   Roles:          {Role.query.count()}")
-    print(f"   Users:          {User.query.count()}")
-    print(f"   Loan Products:  {LoanProduct.query.count()}")
-    print(f"   Source Systems: {SourceSystem.query.count()}")
-    print(f"   Esc. Rules:     {EscalationRule.query.count()}")
-    print(f"   Borrowers:      {Borrower.query.count()}")
-    print(f"   Loans:          {Loan.query.count()}")
-    print(f"   Collaterals:    {Collateral.query.count()}")
-    print(f"   Contact Logs:   {ContactLog.query.count()}")
-    print(f"   History Snaps:  {DelinquencyHistory.query.count()}")
-    print(f"   Actions:        {ActionTaken.query.count()}")
-    print(f"   Transfers:      {CaseTransfer.query.count()}")
-    print(f"   Outsourcing:    {OutsourcingAssignment.query.count()}")
-    print(f"   Committee:      {CommitteeReview.query.count()}")
+    print(f"   Segments:        {Segment.query.count()}")
+    print(f"   Regions:         {Region.query.count()}")
+    print(f"   Branches:        {Branch.query.count()}")
+    print(f"   Roles:           {Role.query.count()}")
+    print(f"   Users:           {User.query.count()}")
+    print(f"   Loan Products:   {LoanProduct.query.count()}")
+    print(f"   Source Systems:  {SourceSystem.query.count()}")
+    print(f"   Esc. Rules:      {EscalationRule.query.count()}")
+    print(f"   Borrowers:       {Borrower.query.count()}")
+    print(f"   Loans:           {Loan.query.count()}")
+    print(f"   Collaterals:     {Collateral.query.count()}")
+    print(f"   Deposit Accts:   {DepositAccount.query.count()}  🆕")
+    print(f"   Contact Logs:    {ContactLog.query.count()}")
+    print(f"   History Snaps:   {DelinquencyHistory.query.count()}")
+    print(f"   Actions:         {ActionTaken.query.count()}")
+    print(f"   Transfers:       {CaseTransfer.query.count()}")
+    print(f"   Outsourcing:     {OutsourcingAssignment.query.count()}")
+    print(f"   Committee:       {CommitteeReview.query.count()}")
     print(f"   ─────────────────────────")
     total = sum([
         Segment.query.count(), Region.query.count(), Branch.query.count(),
         Role.query.count(), User.query.count(), LoanProduct.query.count(),
         SourceSystem.query.count(), EscalationRule.query.count(),
         Borrower.query.count(), Loan.query.count(), Collateral.query.count(),
+        DepositAccount.query.count(),
         ContactLog.query.count(), DelinquencyHistory.query.count(),
         ActionTaken.query.count(), CaseTransfer.query.count(),
         OutsourcingAssignment.query.count(), CommitteeReview.query.count(),
     ])
-    print(f"   Total records:  {total}")
+    print(f"   Total records:   {total}")
 
 
 # ============================================================================

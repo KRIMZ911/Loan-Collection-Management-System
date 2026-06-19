@@ -56,7 +56,7 @@
         <tbody>
         {% for case, loan, borrower, risk in scored_cases %}
         <tr data-case-id="{{ case.id }}">
-            <td>{{ loop.index }}</td>
+            <td>{{ ((pagination.page - 1) * pagination.per_page) + loop.index }}</td>
             <td>{{ risk_badge(risk) }}</td>
             <td><strong>{{ borrower.name }}</strong></td>
             <td>{{ "{:,.0f}".format(loan.amount) }}₮</td>
@@ -70,4 +70,81 @@
         </tbody>
     </table>
 </div>
+
+{# ─── PAGINATION COMPONENT ────────────────────────────────────────────── #}
+{# Paste this AFTER the closing </table> tag inside the card-panel.        #}
+{# Requires `pagination` dict in context.                                   #}
+
+{% macro pagination_controls(p, role) %}
+    <div class="pagination-wrap">
+        {# ── Top info row ── #}
+        <div class="pagination-info">
+            <span><strong>{{ p.start_row }}-{{ p.end_row }}</strong> / <strong>{{ p.total }}</strong> хэрэг</span>
+            <span class="pagination-page">Хуудас <strong>{{ p.page }}</strong> / {{ p.total_pages }}</span>
+        </div>
+
+        {# ── Page navigation ── #}
+        <div class="pagination-nav">
+            {# Previous button #}
+            {% if p.has_prev %}
+                <a href="?page={{ p.prev_page }}" class="pg-btn pg-prev">← Өмнөх</a>
+            {% else %}
+                <span class="pg-btn pg-prev pg-disabled">← Өмнөх</span>
+            {% endif %}
+
+            {# Page numbers — smart display #}
+            <div class="pg-pages">
+                {# Always show page 1 #}
+                {% if p.page > 3 %}
+                    <a href="?page=1" class="pg-num">1</a>
+                    {% if p.page > 4 %}
+                        <span class="pg-ellipsis">…</span>
+                    {% endif %}
+                {% endif %}
+
+                {# Current page ±2 #}
+                {% for n in range(p.page - 2, p.page + 3) %}
+                    {% if n >= 1 and n <= p.total_pages %}
+                        {% if n == p.page %}
+                            <span class="pg-num pg-active">{{ n }}</span>
+                        {% else %}
+                            <a href="?page={{ n }}" class="pg-num">{{ n }}</a>
+                        {% endif %}
+                    {% endif %}
+                {% endfor %}
+
+                {# Always show last page #}
+                {% if p.page < p.total_pages - 2 %}
+                    {% if p.page < p.total_pages - 3 %}
+                        <span class="pg-ellipsis">…</span>
+                    {% endif %}
+                    <a href="?page={{ p.total_pages }}" class="pg-num">{{ p.total_pages }}</a>
+                {% endif %}
+            </div>
+
+            {# Next button #}
+            {% if p.has_next %}
+                <a href="?page={{ p.next_page }}" class="pg-btn pg-next">Дараах →</a>
+            {% else %}
+                <span class="pg-btn pg-next pg-disabled">Дараах →</span>
+            {% endif %}
+        </div>
+
+        {# ── Jump-to-page input ── #}
+        <div class="pagination-jump">
+            <span>Хуудас руу үсрэх:</span>
+            <input type="number" id="pg-jump-input" min="1" max="{{ p.total_pages }}" value="{{ p.page }}" />
+            <button onclick="
+                var v = document.getElementById('pg-jump-input').value;
+                if (v >= 1 && v <= {{ p.total_pages }}) {
+                    window.location = '?page=' + v;
+                }
+            ">Очих</button>
+        </div>
+    </div>
+{% endmacro %}
+
+{# Call it: #}
+{{ pagination_controls(pagination, role) }}
+
 {% endblock %}

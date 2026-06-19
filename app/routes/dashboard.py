@@ -1,10 +1,12 @@
 """
-Dashboard routes — FINAL version with SimpleNamespace wrappers.
-Templates stay untouched. Wrappers translate new model attrs to old names.
+Dashboard routes — UPDATED with pagination (50 per page).
+Templates stay untouched except for pagination controls.
+Wrappers translate new model attrs to old template names.
 """
 
+import math
 from types import SimpleNamespace
-from flask import Blueprint, render_template, session, redirect, url_for
+from flask import Blueprint, render_template, session, redirect, url_for, request
 from sqlalchemy import func
 from app import db
 from app.models import (
@@ -17,6 +19,8 @@ from app.services.scoring import score_cases, RISK_LEVELS
 
 dashboard_bp = Blueprint("dashboard", __name__)
 
+# Pagination — rows per page for list dashboards
+PER_PAGE = 50
 
 NAV_ITEMS = {
     "bpuh": [
@@ -74,10 +78,27 @@ def get_base_context():
     }
 
 
+def _build_pagination(page, total_count):
+    """Build pagination metadata dict for templates."""
+    total_pages = max(1, math.ceil(total_count / PER_PAGE))
+    page = max(1, min(page, total_pages))
+    return {
+        "page": page,
+        "per_page": PER_PAGE,
+        "total": total_count,
+        "total_pages": total_pages,
+        "has_prev": page > 1,
+        "has_next": page < total_pages,
+        "prev_page": max(1, page - 1),
+        "next_page": min(total_pages, page + 1),
+        "start_row": (page - 1) * PER_PAGE + 1 if total_count > 0 else 0,
+        "end_row": min(page * PER_PAGE, total_count),
+    }
+
+
 # ── SimpleNamespace wrappers: new model attrs → old template names ──
 
 def _w_case(loan):
-    """Wrap Loan as old CollectionCase for templates."""
     return SimpleNamespace(
         id=loan.id,
         days_overdue=loan.delinquency_days or 0,
@@ -88,7 +109,6 @@ def _w_case(loan):
 
 
 def _w_loan(loan):
-    """Wrap Loan with old attribute names for templates."""
     return SimpleNamespace(
         id=loan.id,
         amount=float(loan.amount_original or 0),
@@ -103,7 +123,6 @@ def _w_loan(loan):
 
 
 def _w_borrower(borrower, hide=False):
-    """Wrap Borrower with old attribute names."""
     if hide:
         return SimpleNamespace(name="***", register_no="***", phone="***", email="***", address="***")
     return SimpleNamespace(
@@ -116,7 +135,6 @@ def _w_borrower(borrower, hide=False):
 
 
 def _w_risk(risk_info):
-    """Flatten risk_info dict into a dot-accessible namespace."""
     rl = risk_info.get('risk_level', {})
     return SimpleNamespace(
         score=risk_info.get('score', 0),
@@ -129,7 +147,6 @@ def _w_risk(risk_info):
 
 
 def _w_action(cl):
-    """Wrap ContactLog as old CaseAction."""
     return SimpleNamespace(
         created_at=cl.contact_date,
         action_type=cl.contact_type.value if cl.contact_type else 'note',
@@ -139,7 +156,6 @@ def _w_action(cl):
 
 
 def _w_transfer(t):
-    """Wrap CaseTransfer with safe attribute access."""
     return SimpleNamespace(
         transfer_date=t.transfer_date,
         to_entity=t.to_entity,
@@ -149,7 +165,6 @@ def _w_transfer(t):
 
 
 def _pack_scored(scored):
-    """Convert score_cases output to template-friendly 4-tuples."""
     return [(_w_case(l), _w_loan(l), _w_borrower(b), _w_risk(r)) for l, b, r in scored]
 
 
@@ -158,8 +173,8 @@ def _build_kpis(scored):
     total_amount = sum(float(l.amount_overdue or 0) for l, b, r in scored)
     high_risk = sum(1 for l, b, r in scored if r.get('score', 0) >= 50)
     return [
-        {"label": "Нийт хэрэг", "value": total, "sub": "Зөрчилтэй зээл"},
-        {"label": "Нийт дүн", "value": f"{total_amount:,.0f} ₮", "sub": "Хэтэрсэн өр"},
+        {"label": "Энэ хуудсанд", "value": total, "sub": "Зөрчилтэй зээл"},
+        {"label": "Энэ хуудсын дүн", "value": f"{total_amount:,.0f} ₮", "sub": "Хэтэрсэн өр"},
         {"label": "Өндөр эрсдэл", "value": high_risk, "sub": "Эрсдэл 50+"},
     ]
 
@@ -202,35 +217,59 @@ def case_detail(loan_id):
 
 
 def _build_bpuh():
-    cases_raw = (
+    """БПҮХ — Consumer delinquent loans (PAGINATED, 50 per page)."""
+    page = request.args.get("page", 1, type=int)
+
+    base_query = (
         db.session.query(Loan, Borrower)
         .join(Borrower, Loan.borrower_id == Borrower.id)
         .filter(Borrower.segment == SegmentType.RETAIL)
         .filter(Loan.delinquency_days > 0)
         .order_by(Loan.delinquency_days.desc())
-        .limit(50).all()
     )
+    total_count = base_query.count()
+    pagination = _build_pagination(page, total_count)
+
+    page = pagination['page']  # safe page
+    offset = (page - 1) * PER_PAGE
+    cases_raw = base_query.offset(offset).limit(PER_PAGE).all()
+
     scored = score_cases(cases_raw)
     ctx = get_base_context()
-    ctx.update({"scored_cases": _pack_scored(scored), "kpis": _build_kpis(scored)})
+    ctx.update({
+        "scored_cases": _pack_scored(scored),
+        "kpis": _build_kpis(scored),
+        "pagination": pagination,
+    })
     return render_template("dashboard/bpuh.html", **ctx)
 
 
 def _build_zm():
+    """ЗМ — Branch delinquent loans (PAGINATED)."""
+    page = request.args.get("page", 1, type=int)
     user = User.query.get(session.get("user_id"))
     branch_id = user.branch_id if user else None
     branch_name = user.branch.name if user and user.branch else "—"
-    query = (
+
+    base_query = (
         db.session.query(Loan, Borrower)
         .join(Borrower, Loan.borrower_id == Borrower.id)
         .filter(Loan.delinquency_days > 0)
     )
     if branch_id:
-        query = query.filter(Loan.branch_id == branch_id)
-    cases_raw = query.order_by(Loan.delinquency_days.desc()).all()
+        base_query = base_query.filter(Loan.branch_id == branch_id)
+    base_query = base_query.order_by(Loan.delinquency_days.desc())
+
+    total_count = base_query.count()
+    pagination = _build_pagination(page, total_count)
+
+    page = pagination['page']
+    offset = (page - 1) * PER_PAGE
+    cases_raw = base_query.offset(offset).limit(PER_PAGE).all()
+
     scored = score_cases(cases_raw)
     months = ['1-р сар', '2-р сар', '3-р сар', '4-р сар', '5-р сар', '6-р сар']
-    import random; payments = [random.randint(3, 15) for _ in months]
+    import random as _r; payments = [_r.randint(3, 15) for _ in months]
     ctx = get_base_context()
     ctx.update({
         "scored_cases": _pack_scored(scored),
@@ -238,29 +277,38 @@ def _build_zm():
         "branch": branch_name,
         "chart_months": months,
         "chart_payments": payments,
+        "pagination": pagination,
     })
     return render_template("dashboard/zm.html", **ctx)
 
 
 def _build_jdbbg():
-    cases_raw = (
+    """ЖДББГ — Corporate SMB loans (PAGINATED, grouped within page)."""
+    page = request.args.get("page", 1, type=int)
+
+    base_query = (
         db.session.query(Loan, Borrower)
         .join(Borrower, Loan.borrower_id == Borrower.id)
         .filter(Borrower.segment == SegmentType.SMB)
         .filter(Loan.delinquency_days > 0)
-        .order_by(Loan.delinquency_days.desc()).all()
+        .order_by(Loan.delinquency_days.desc())
     )
+    total_count = base_query.count()
+    pagination = _build_pagination(page, total_count)
+
+    page = pagination['page']
+    offset = (page - 1) * PER_PAGE
+    cases_raw = base_query.offset(offset).limit(PER_PAGE).all()
+
     scored = score_cases(cases_raw)
-    # Group by borrower name as 'companies'
+    # Group this page's loans by borrower name as 'companies'
     companies = {}
     for loan, borrower, risk_info in scored:
         name = f"{borrower.last_name} {borrower.first_name}"
         if name not in companies:
             companies[name] = SimpleNamespace(
                 worst_risk=_w_risk(risk_info),
-                cases=[],
-                delinquent_amount=0,
-                total_loans=0,
+                cases=[], delinquent_amount=0, total_loans=0,
             )
         c = companies[name]
         c.cases.append((_w_case(loan), _w_loan(loan), _w_borrower(borrower), _w_risk(risk_info)))
@@ -269,23 +317,41 @@ def _build_jdbbg():
         if risk_info.get('score', 0) > c.worst_risk.score:
             c.worst_risk = _w_risk(risk_info)
     ctx = get_base_context()
-    ctx.update({"companies": companies, "kpis": _build_kpis(scored)})
+    ctx.update({
+        "companies": companies,
+        "kpis": _build_kpis(scored),
+        "pagination": pagination,
+    })
     return render_template("dashboard/jdbbg.html", **ctx)
 
 
 def _build_taug():
-    cases_raw = (
+    """ТАУГ — NPL cases (PAGINATED)."""
+    page = request.args.get("page", 1, type=int)
+
+    base_query = (
         db.session.query(Loan, Borrower)
         .join(Borrower, Loan.borrower_id == Borrower.id)
         .filter(Loan.status.in_([
             LoanStatus.TRANSFERRED_TAUG, LoanStatus.LEGAL,
             LoanStatus.COURT, LoanStatus.OUTSOURCED,
         ]))
-        .order_by(Loan.updated_at.desc()).all()
+        .order_by(Loan.updated_at.desc())
     )
+    total_count = base_query.count()
+    pagination = _build_pagination(page, total_count)
+
+    page = pagination['page']
+    offset = (page - 1) * PER_PAGE
+    cases_raw = base_query.offset(offset).limit(PER_PAGE).all()
+
     scored = score_cases(cases_raw)
     ctx = get_base_context()
-    ctx.update({"scored_cases": _pack_scored(scored), "kpis": _build_kpis(scored)})
+    ctx.update({
+        "scored_cases": _pack_scored(scored),
+        "kpis": _build_kpis(scored),
+        "pagination": pagination,
+    })
     return render_template("dashboard/taug.html", **ctx)
 
 
@@ -353,14 +419,12 @@ def _build_mgmt():
         {"label": "Шүүх", "value": court, "sub": f"{court_pct}%"},
     ]
     months = ['1-р сар','2-р сар','3-р сар','4-р сар','5-р сар','6-р сар']
-    import random; chart_values = [random.randint(5,30) for _ in months]
-    # Outsourcing perf
+    import random as _r; chart_values = [_r.randint(5,30) for _ in months]
     os_rows = (
         db.session.query(OutsourcingAssignment.company_name, func.count(OutsourcingAssignment.id), func.sum(OutsourcingAssignment.collected_amount))
         .group_by(OutsourcingAssignment.company_name).all()
     )
     outsourcing_perf = [SimpleNamespace(company=n, total=c, collected=float(s or 0), commission=round(float(s or 0)*0.1)) for n,c,s in os_rows]
-    # Branch perf
     from app.models import Branch
     br_rows = (
         db.session.query(Branch.name, func.count(Loan.id))
@@ -371,16 +435,10 @@ def _build_mgmt():
     branch_perf = [SimpleNamespace(branch=n, cases=c) for n,c in br_rows]
     ctx = get_base_context()
     ctx.update({
-        "kpis": kpis,
-        "chart_months": months,
-        "chart_values": chart_values,
-        "outsourcing_perf": outsourcing_perf,
-        "branch_perf": branch_perf,
-        "total_cases": total_d,
-        "total_amount": total_a,
-        "resolved": resolved,
-        "court": court,
-        "court_pct": court_pct,
+        "kpis": kpis, "chart_months": months, "chart_values": chart_values,
+        "outsourcing_perf": outsourcing_perf, "branch_perf": branch_perf,
+        "total_cases": total_d, "total_amount": total_a,
+        "resolved": resolved, "court": court, "court_pct": court_pct,
     })
     return render_template("dashboard/mgmt.html", **ctx)
 

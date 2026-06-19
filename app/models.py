@@ -1,35 +1,24 @@
 """
 =============================================================================
-Collection System — SQLAlchemy Models (Full Backend)
+Collection System — SQLAlchemy Models (UPDATED — Full Bank Data Coverage)
 =============================================================================
 Зээлийн өр барагдуулалтын системийн мэдээллийн сангийн бүтэц.
-Unified database schema for the Loan Collection System.
 
-Replaces 6+ disconnected bank systems (GrapeBank, Allweb, Excel,
-Зээлийн хороо программ, Иргэдийн зээл программ, email) with a single
-unified backend.
+UPDATES IN THIS VERSION:
+  - 34 new fields added to cover both BPUH Excel reports (97% / 100% coverage)
+  - NEW table: DepositAccount (deposit/payment accounts per borrower)
+  - Borrower: workplace_name, phone_home, phone_work
+  - Loan: 22 new fields (interest breakdown, off-balance, model calc, etc.)
+  - Collateral: coverage_percent, is_unregistered
 
 Source documents:
-  - Excess process all.xlsx          — Escalation rules & daily actions
-  - Excess conference all.xlsx       — Committee review workflows
-  - Зээлийн үйл ажиллагааны матрит  — Internal control matrix (23+ roles)
+  - Excess process all.xlsx
+  - Excess conference all.xlsx
+  - Зээлийн үйл ажиллагааны матрит (түр).xlsx
+  - Өр үүссэн зээлийн мэдээ-Шинэ.xlsx (BPUH daily report v1)
+  - 2nd_version BPUH daily report (v2)
 
-Architecture:
-  - 21 Enum classes for type safety
-  - 24 Models (23 original + OutsourcingAssignment)
-  - to_dict() on every model for JSON serialization
-  - Indexes on all frequently queried fields
-  - Full audit trail
-
-Table groups:
-  ORGANISATION:  Segment → Region → Branch → Role → User → Permission
-  REFERENCE:     LoanProduct, SourceSystem
-  CORE:          Borrower, RelatedParty, Loan (THE hub), Collateral
-  TRACKING:      DelinquencyHistory, ContactLog, EscalationRule, ActionTaken
-  COMMITTEE:     CommitteeReview, ClassificationHistory
-  SUPPORTING:    Notification, Document, InsuranceCase, Restructure,
-                 OutsourcingAssignment, CaseTransfer
-  AUDIT:         AuditLog
+Total: 26 tables, ~314 fields
 =============================================================================
 """
 
@@ -41,31 +30,31 @@ from app import db
 
 
 # ============================================================================
-# ENUMS — Type-safe constants for all status/type fields
+# ENUMS
 # ============================================================================
 
 class SegmentType(enum.Enum):
-    """Сегментийн төрөл — File 3 Row 6"""
+    """Сегментийн төрөл"""
     RETAIL = "retail"
     SMB = "smb"
 
 
 class PartyType(enum.Enum):
-    """Холбоотой этгээдийн төрөл — File 1 Rows 4, 29, 31"""
-    CO_BORROWER = "co_borrower"              # Хамтран зээлдэгч
-    GUARANTOR = "guarantor"                  # Батлан даагч
-    COLLATERAL_PROVIDER = "collateral_provider"  # Барьцаалуулагч
-    FAMILY_MEMBER = "family_member"          # Гэр бүлийн гишүүн
+    """Холбоотой этгээдийн төрөл"""
+    CO_BORROWER = "co_borrower"
+    GUARANTOR = "guarantor"
+    COLLATERAL_PROVIDER = "collateral_provider"
+    FAMILY_MEMBER = "family_member"
 
 
 class ContactType(enum.Enum):
-    """Холбогдох төрөл — File 1 Rows 3-24"""
-    PHONE_CALL = "phone_call"                # Утсаар холбогдох
-    SMS = "sms"                              # Мессеж илгээх
-    EMAIL = "email"                          # Цахим шуудан
-    IN_PERSON_VISIT = "in_person_visit"      # Биечлэн уулзах
-    OFFICIAL_NOTICE = "official_notice"      # Албан мэдэгдэл
-    COMMITMENT_LETTER = "commitment_letter"  # Баталгаажуулах бичиг
+    """Холбогдох төрөл"""
+    PHONE_CALL = "phone_call"
+    SMS = "sms"
+    EMAIL = "email"
+    IN_PERSON_VISIT = "in_person_visit"
+    OFFICIAL_NOTICE = "official_notice"
+    COMMITMENT_LETTER = "commitment_letter"
 
 
 class ContactDirection(enum.Enum):
@@ -74,7 +63,7 @@ class ContactDirection(enum.Enum):
 
 
 class ActionType(enum.Enum):
-    """Авах арга хэмжээний төрөл — File 1 C8"""
+    """Авах арга хэмжээний төрөл"""
     REPORT_PULLED = "report_pulled"
     SMS_SENT = "sms_sent"
     EMAIL_SENT = "email_sent"
@@ -94,15 +83,13 @@ class ActionType(enum.Enum):
 
 
 class CommitteeType(enum.Enum):
-    """Хорооны төрөл — File 2"""
-    ZDKH = "zdkh"    # Зээлийн дүн хэлэлцэх хороо
-    CHAKH = "chakh"  # Чанаргүй активын хороо
-    ZKH = "zkh"      # Зээлийн хороо
-    BZZ = "bzz"      # Бүсийн зээлийн зөвлөл
+    ZDKH = "zdkh"
+    CHAKH = "chakh"
+    ZKH = "zkh"
+    BZZ = "bzz"
 
 
 class CommitteeDecisionType(enum.Enum):
-    """Хорооны шийдвэр — File 2 Row 9"""
     APPROVED = "approved"
     REJECTED = "rejected"
     RESTRUCTURE = "restructure"
@@ -121,16 +108,14 @@ class ReviewStatus(enum.Enum):
 
 
 class ClassificationLevel(enum.Enum):
-    """Зээлийн ангилал — Монголбанкны стандарт"""
-    NORMAL = "normal"              # Хэвийн
-    WATCH = "watch"                # Анхаарал хандуулах
-    SUBSTANDARD = "substandard"    # Хэвийн бус
-    DOUBTFUL = "doubtful"          # Эргэлзээтэй
-    LOSS = "loss"                  # Алдагдал
+    NORMAL = "normal"
+    WATCH = "watch"
+    SUBSTANDARD = "substandard"
+    DOUBTFUL = "doubtful"
+    LOSS = "loss"
 
 
 class LoanStatus(enum.Enum):
-    """Зээлийн төлөв"""
     ACTIVE = "active"
     DELINQUENT = "delinquent"
     RESTRUCTURED = "restructured"
@@ -144,16 +129,14 @@ class LoanStatus(enum.Enum):
 
 
 class CollateralType(enum.Enum):
-    """Барьцаа хөрөнгийн төрөл — File 3 Rows 39, 58, 62"""
-    REAL_ESTATE = "real_estate"              # Үл хөдлөх
-    MOVABLE_PROPERTY = "movable_property"    # Хөдлөх
-    VEHICLE = "vehicle"                      # Автомашин
-    DEPOSIT = "deposit"                      # Хадгаламж
-    INTANGIBLE = "intangible"                # Эдийн бус
+    REAL_ESTATE = "real_estate"
+    MOVABLE_PROPERTY = "movable_property"
+    VEHICLE = "vehicle"
+    DEPOSIT = "deposit"
+    INTANGIBLE = "intangible"
 
 
 class CollateralStatus(enum.Enum):
-    """Барьцааны төлөв — File 1 Row 37"""
     ACTIVE = "active"
     DAMAGED = "damaged"
     DESTROYED = "destroyed"
@@ -163,7 +146,6 @@ class CollateralStatus(enum.Enum):
 
 
 class DocumentType(enum.Enum):
-    """Баримт бичгийн төрөл — File 1 Rows 24, 29, 32, 33, 36, 38"""
     COMMITMENT_LETTER = "commitment_letter"
     OFFICIAL_NOTICE = "official_notice"
     LEGAL_NOTICE = "legal_notice"
@@ -184,7 +166,6 @@ class DocumentStatus(enum.Enum):
 
 
 class NotificationType(enum.Enum):
-    """Мэдэгдлийн төрөл — File 1 Rows 8-10, File 2 Row 4"""
     DELINQUENT_HBZ = "delinquent_hbz"
     PENSION_MONTHLY = "pension_monthly"
     NO_CONTACT_INFO = "no_contact_info"
@@ -208,12 +189,11 @@ class NotificationStatus(enum.Enum):
 
 
 class PermissionType(enum.Enum):
-    """Эрхийн төрөл — File 3 Rows 99-102"""
-    EXECUTE = "execute"              # Г — Гүйцэтгэх
-    CONTROL = "control"              # Х — Хянах
-    DUAL_CONTROL = "dual_control"    # ДХ — Давхар хяналт
-    SUPPORT = "support"              # Д — Дэмжих
-    SUBSTITUTE = "substitute"        # ОХ — Орлож хянах
+    EXECUTE = "execute"
+    CONTROL = "control"
+    DUAL_CONTROL = "dual_control"
+    SUPPORT = "support"
+    SUBSTITUTE = "substitute"
 
 
 class InsuranceDecision(enum.Enum):
@@ -229,7 +209,6 @@ class RestructureDecision(enum.Enum):
 
 
 class EscalationFrequency(enum.Enum):
-    """Давтамж — File 1 C16"""
     DAILY = "daily"
     AS_NEEDED = "as_needed"
     MONTHLY = "monthly"
@@ -237,7 +216,6 @@ class EscalationFrequency(enum.Enum):
 
 
 class TransferStatus(enum.Enum):
-    """Case transfer status"""
     PENDING = "pending"
     ACCEPTED = "accepted"
     COMPLETED = "completed"
@@ -245,15 +223,23 @@ class TransferStatus(enum.Enum):
 
 
 class OutsourcingStatus(enum.Enum):
-    """Outsourcing assignment status"""
     ACTIVE = "active"
     COMPLETED = "completed"
     CANCELLED = "cancelled"
     RETURNED = "returned"
 
 
+# NEW ENUM for DepositAccount
+class DepositAccountType(enum.Enum):
+    """Депозит дансны төрөл — type of deposit account"""
+    PAYMENT = "payment"      # Тоlбөр төлөх данс
+    SAVINGS = "savings"      # Хадгаламжийн данс
+    CURRENT = "current"      # Харилцах данс
+    OTHER = "other"          # Бусад
+
+
 # ============================================================================
-# HELPER
+# HELPER FUNCTIONS
 # ============================================================================
 
 def _utcnow():
@@ -261,28 +247,30 @@ def _utcnow():
 
 
 def _date_to_str(d):
-    """Safely convert date/datetime to ISO string for to_dict()."""
     if d is None:
         return None
     return d.isoformat() if hasattr(d, "isoformat") else str(d)
 
 
 def _enum_to_str(e):
-    """Safely convert enum to its string value for to_dict()."""
     if e is None:
         return None
     return e.value if hasattr(e, "value") else str(e)
 
 
+def _to_float(v):
+    """Safely convert Decimal/None to float for JSON."""
+    if v is None:
+        return None
+    return float(v)
+
+
 # ============================================================================
-# MODELS — Organisational Structure
+# MODELS — Organisational Structure (unchanged)
 # ============================================================================
 
 class Segment(db.Model):
-    """
-    Сегмент — Retail / SMB
-    Source: File 3 Row 6, Rows 115 & 119 (ИБГ, ЖДББГ)
-    """
+    """Сегмент — Retail / SMB"""
     __tablename__ = "segments"
 
     id = db.Column(db.Integer, primary_key=True)
@@ -290,7 +278,6 @@ class Segment(db.Model):
     segment_type = db.Column(db.Enum(SegmentType), nullable=False)
     department_code = db.Column(db.String(20))
 
-    # Relationships
     regions = db.relationship("Region", back_populates="segment", lazy="dynamic")
     loan_products = db.relationship("LoanProduct", back_populates="segment", lazy="dynamic")
 
@@ -307,37 +294,26 @@ class Segment(db.Model):
 
 
 class Region(db.Model):
-    """
-    Бүс — Regional grouping of branches.
-    Source: File 2 Rows 16-17 — "Бүсийн АМ"
-    """
+    """Бүс — Regional grouping"""
     __tablename__ = "regions"
 
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
     segment_id = db.Column(db.Integer, db.ForeignKey("segments.id"), nullable=False)
 
-    # Relationships
     segment = db.relationship("Segment", back_populates="regions")
     branches = db.relationship("Branch", back_populates="region", lazy="dynamic")
     users = db.relationship("User", back_populates="region", lazy="dynamic")
 
     def to_dict(self):
-        return {
-            "id": self.id,
-            "name": self.name,
-            "segment_id": self.segment_id,
-        }
+        return {"id": self.id, "name": self.name, "segment_id": self.segment_id}
 
     def __repr__(self):
         return f"<Region {self.name}>"
 
 
 class Branch(db.Model):
-    """
-    Салбар — Bank branch.
-    Source: File 1 Row 8 — "салбарт и-мэйлээр мэдэгдэнэ"
-    """
+    """Салбар — Bank branch"""
     __tablename__ = "branches"
 
     id = db.Column(db.Integer, primary_key=True)
@@ -348,7 +324,6 @@ class Branch(db.Model):
     email = db.Column(db.String(150))
     phone = db.Column(db.String(20))
 
-    # Relationships
     region = db.relationship("Region", back_populates="branches")
     users = db.relationship("User", back_populates="branch", lazy="dynamic")
     borrowers = db.relationship("Borrower", back_populates="branch", lazy="dynamic")
@@ -371,20 +346,15 @@ class Branch(db.Model):
 
 
 class Role(db.Model):
-    """
-    Албан тушаал — Staff roles (26 from File 3 control matrix).
-    Each column in File 3 C4-C26 is a role.
-    """
+    """Албан тушаал — Staff roles"""
     __tablename__ = "roles"
 
     id = db.Column(db.Integer, primary_key=True)
     code = db.Column(db.String(50), nullable=False, unique=True)
     name_mn = db.Column(db.String(150), nullable=False)
     name_en = db.Column(db.String(150))
-    # Maps to dashboard routing — which dashboard this role sees
-    dashboard_code = db.Column(db.String(20))  # bpuh, zm, jdbbg, taug, outsourcing, senior, mgmt, committee
+    dashboard_code = db.Column(db.String(20))
 
-    # Relationships
     users = db.relationship("User", back_populates="role", lazy="dynamic")
     permissions = db.relationship("Permission", back_populates="role", lazy="dynamic")
 
@@ -402,12 +372,7 @@ class Role(db.Model):
 
 
 class User(db.Model):
-    """
-    Хэрэглэгч / Ажилтан — Bank staff members.
-    Source: File 3 Row 6 — all role columns; File 1 C18 — Холбогдох ажилтан
-
-    Note: keeps backward-compatible to_dict() for existing templates.
-    """
+    """Хэрэглэгч / Ажилтан"""
     __tablename__ = "users"
 
     id = db.Column(db.Integer, primary_key=True)
@@ -424,7 +389,6 @@ class User(db.Model):
     created_at = db.Column(db.DateTime, default=_utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=_utcnow, onupdate=_utcnow)
 
-    # Relationships
     role = db.relationship("Role", back_populates="users")
     branch = db.relationship("Branch", back_populates="users")
     region = db.relationship("Region", back_populates="users")
@@ -450,10 +414,7 @@ class User(db.Model):
 
 
 class Permission(db.Model):
-    """
-    Эрхийн матриц — File 3 control matrix.
-    Г=Execute, Х=Control, ДХ=Dual Control, Д=Support, ОХ=Substitute
-    """
+    """Эрхийн матриц"""
     __tablename__ = "permissions"
 
     id = db.Column(db.Integer, primary_key=True)
@@ -463,12 +424,9 @@ class Permission(db.Model):
     permission_level = db.Column(db.String(5))
     description = db.Column(db.Text)
 
-    # Relationships
     role = db.relationship("Role", back_populates="permissions")
 
-    __table_args__ = (
-        db.Index("ix_permissions_role_step", "role_id", "process_step_code"),
-    )
+    __table_args__ = (db.Index("ix_permissions_role_step", "role_id", "process_step_code"),)
 
     def to_dict(self):
         return {
@@ -484,15 +442,8 @@ class Permission(db.Model):
         return f"<Permission role={self.role_id} step={self.process_step_code}>"
 
 
-# ============================================================================
-# MODELS — Reference / Lookup Tables
-# ============================================================================
-
 class LoanProduct(db.Model):
-    """
-    Бүтээгдэхүүний төрөл — Loan product types.
-    Source: File 1 C2 — every distinct product.
-    """
+    """Бүтээгдэхүүний төрөл"""
     __tablename__ = "loan_products"
 
     id = db.Column(db.Integer, primary_key=True)
@@ -502,7 +453,6 @@ class LoanProduct(db.Model):
     is_digital = db.Column(db.Boolean, default=False)
     auto_sms_day = db.Column(db.Integer)
 
-    # Relationships
     segment = db.relationship("Segment", back_populates="loan_products")
     loans = db.relationship("Loan", back_populates="loan_product", lazy="dynamic")
 
@@ -520,10 +470,7 @@ class LoanProduct(db.Model):
 
 
 class SourceSystem(db.Model):
-    """
-    Эх системүүд — External systems we import data from.
-    Source: File 1 C17, File 2 C14.
-    """
+    """Эх системүүд"""
     __tablename__ = "source_systems"
 
     id = db.Column(db.Integer, primary_key=True)
@@ -532,27 +479,21 @@ class SourceSystem(db.Model):
     description = db.Column(db.Text)
 
     def to_dict(self):
-        return {
-            "id": self.id,
-            "code": self.code,
-            "name": self.name,
-            "description": self.description,
-        }
+        return {"id": self.id, "code": self.code, "name": self.name, "description": self.description}
 
     def __repr__(self):
         return f"<SourceSystem {self.code}>"
 
 
 # ============================================================================
-# MODELS — Core Entities
+# MODEL — Borrower (UPDATED: 3 new fields)
 # ============================================================================
 
 class Borrower(db.Model):
     """
     Зээлдэгч — The central person/entity who took the loan.
-    Source: All 3 files.
 
-    Supports hide_personal mode for outsourcing dashboard.
+    UPDATED: Added workplace_name, phone_home, phone_work for BPUH Excel coverage.
     """
     __tablename__ = "borrowers"
 
@@ -568,10 +509,17 @@ class Borrower(db.Model):
     phone_verified = db.Column(db.Boolean, default=False)
     email = db.Column(db.String(150))
 
+    # 🆕 NEW: Additional phone numbers
+    phone_home = db.Column(db.String(20))    # Гэрийн утас
+    phone_work = db.Column(db.String(20))    # Ажлын утас
+
     # Address
     address_residential = db.Column(db.String(500))
     address_work = db.Column(db.String(500))
     address_verified = db.Column(db.Boolean, default=False)
+
+    # 🆕 NEW: Workplace
+    workplace_name = db.Column(db.String(300))    # Ажлын газар
 
     # Status
     employment_status = db.Column(db.String(50))
@@ -591,16 +539,11 @@ class Borrower(db.Model):
     loans = db.relationship("Loan", back_populates="borrower", lazy="dynamic")
     related_parties = db.relationship("RelatedParty", back_populates="borrower", lazy="dynamic")
     contact_logs = db.relationship("ContactLog", back_populates="borrower", lazy="dynamic")
+    deposit_accounts = db.relationship("DepositAccount", back_populates="borrower", lazy="dynamic")  # 🆕
 
-    __table_args__ = (
-        db.Index("ix_borrowers_name", "last_name", "first_name"),
-    )
+    __table_args__ = (db.Index("ix_borrowers_name", "last_name", "first_name"),)
 
     def to_dict(self, hide_personal=False):
-        """
-        Serialize to dict.
-        hide_personal=True for outsourcing view — hides sensitive data.
-        """
         if hide_personal:
             return {
                 "id": self.id,
@@ -618,12 +561,15 @@ class Borrower(db.Model):
             "phone": self.phone_primary,
             "phone_primary": self.phone_primary,
             "phone_secondary": self.phone_secondary,
+            "phone_home": self.phone_home,       # 🆕
+            "phone_work": self.phone_work,       # 🆕
             "phone_verified": self.phone_verified,
             "email": self.email,
             "address": self.address_residential,
             "address_residential": self.address_residential,
             "address_work": self.address_work,
             "address_verified": self.address_verified,
+            "workplace_name": self.workplace_name,  # 🆕
             "employment_status": self.employment_status,
             "income_source": self.income_source,
             "is_deceased": self.is_deceased,
@@ -635,11 +581,12 @@ class Borrower(db.Model):
         return f"<Borrower {self.cif_number} — {self.last_name}>"
 
 
+# ============================================================================
+# MODEL — RelatedParty (unchanged)
+# ============================================================================
+
 class RelatedParty(db.Model):
-    """
-    Холбоотой этгээдүүд — Co-borrowers, guarantors, family.
-    Source: File 1 Rows 4, 29, 31
-    """
+    """Холбоотой этгээдүүд — Co-borrowers, guarantors, family"""
     __tablename__ = "related_parties"
 
     id = db.Column(db.Integer, primary_key=True)
@@ -654,14 +601,11 @@ class RelatedParty(db.Model):
     address = db.Column(db.String(500))
     employment_status = db.Column(db.String(50))
 
-    # Relationships
     borrower = db.relationship("Borrower", back_populates="related_parties")
     loan = db.relationship("Loan", back_populates="related_parties")
     contact_logs = db.relationship("ContactLog", back_populates="related_party", lazy="dynamic")
 
-    __table_args__ = (
-        db.Index("ix_related_parties_borrower", "borrower_id"),
-    )
+    __table_args__ = (db.Index("ix_related_parties_borrower", "borrower_id"),)
 
     def to_dict(self):
         return {
@@ -682,21 +626,22 @@ class RelatedParty(db.Model):
         return f"<RelatedParty {self.party_type.value}: {self.name}>"
 
 
+
+# ============================================================================
+# MODEL — Loan (UPDATED: 22 new fields for BPUH Excel coverage)
+# ============================================================================
+
 class Loan(db.Model):
     """
     Зээл — THE CENTRAL TABLE. Individual loan account + delinquency tracking.
 
-    This replaces the old CollectionCase + Loan split.
-    Every dashboard, every query, every action connects through here.
-
-    Source: All 3 files — this is the hub of the entire system.
-
-    Key design decisions:
-      - Absorbs CollectionCase: delinquency_days, amount_overdue, status,
-        assigned staff, escalation stage all live here
-      - status enum includes all old CollectionCase statuses (transferred,
-        legal, court, outsourced, resolved) plus new ones
-      - to_dict() outputs keys compatible with existing templates where possible
+    UPDATED: Added 22 fields covering BPUH daily Excel reports:
+      - 2 staff assignments (analyst, relationship manager)
+      - 4 tracking dates/balances (theoretical, last payment, review, notes)
+      - 8 overdue principal/interest breakdown fields
+      - 3 accrued interest amounts
+      - 4 off-balance account fields
+      - 2 model calculation fields
     """
     __tablename__ = "loans"
 
@@ -719,38 +664,63 @@ class Loan(db.Model):
     maturity_date = db.Column(db.Date)
     payment_schedule_type = db.Column(db.String(50))
 
-    # Classification — File 2 committee decisions
+    # Status & Classification
     status = db.Column(db.Enum(LoanStatus), default=LoanStatus.ACTIVE, nullable=False)
-    classification = db.Column(
-        db.Enum(ClassificationLevel),
-        default=ClassificationLevel.NORMAL,
-        nullable=False,
-    )
+    classification = db.Column(db.Enum(ClassificationLevel), default=ClassificationLevel.NORMAL, nullable=False)
 
-    # Delinquency tracking (absorbed from old CollectionCase)
+    # Delinquency tracking
     delinquency_days = db.Column(db.Integer, default=0, nullable=False, index=True)
     delinquency_start_date = db.Column(db.Date)
     current_escalation_stage = db.Column(db.Integer, default=0)
-    priority = db.Column(db.String(10), default="medium")  # high, medium, low — from scoring
+    priority = db.Column(db.String(10), default="medium")
 
-    # Insurance
+    # Insurance & Transfers
     is_insurance_eligible = db.Column(db.Boolean, default=False)
-
-    # Transfers
     is_transferred_to_taug = db.Column(db.Boolean, default=False)
     taug_transfer_date = db.Column(db.Date)
-
-    # Restructure — max 2 (File 1 Row 28)
     restructure_count = db.Column(db.Integer, default=0)
-
-    # Guarantee — File 1 Row 33
     has_zbds_guarantee = db.Column(db.Boolean, default=False)
 
-    # Assignment
+    # Assignment (existing)
     branch_id = db.Column(db.Integer, db.ForeignKey("branches.id"))
-    assigned_to = db.Column(db.Integer, db.ForeignKey("users.id"))  # Primary — backward compat
+    assigned_to = db.Column(db.Integer, db.ForeignKey("users.id"))
     assigned_zm_id = db.Column(db.Integer, db.ForeignKey("users.id"))
     assigned_zkha_id = db.Column(db.Integer, db.ForeignKey("users.id"))
+
+    # 🆕 GROUP A — Additional staff assignments (from BPUH Excel)
+    assigned_analyst_id = db.Column(db.Integer, db.ForeignKey("users.id"))  # Зээлийн шинжээч
+    assigned_hm_id = db.Column(db.Integer, db.ForeignKey("users.id"))       # Харилцааны менежер
+
+    # 🆕 GROUP B — Tracking dates and theoretical balance
+    theoretical_balance = db.Column(db.Numeric(18, 2))      # Онолын үлдэгдэл
+    last_payment_date = db.Column(db.Date)                  # Сүүлийн төлөлтийн огноо
+    review_date = db.Column(db.Date)                        # Эргэн хянах өдөр
+    gb_notes = db.Column(db.Text)                           # ГБ тайлбар
+
+    # 🆕 GROUP C — Overdue principal/interest breakdown (very important for BPUH)
+    overdue_principal = db.Column(db.Numeric(18, 2))                  # Үндсэн зээл
+    overdue_principal_days = db.Column(db.Integer)                    # Зээлийн хоног
+    overdue_interest = db.Column(db.Numeric(18, 2))                   # Хүү
+    overdue_interest_days = db.Column(db.Integer)                     # Хүүгийн хоног
+    overdue_commission_interest = db.Column(db.Numeric(18, 2))        # Ком хүү
+    overdue_commission_days = db.Column(db.Integer)                   # Ком хүүний хоног
+    overdue_penalty_interest = db.Column(db.Numeric(18, 2))           # Торгуулийн хүү
+    overdue_penalty_days = db.Column(db.Integer)                      # Торгуулийн хүүний хоног
+
+    # 🆕 GROUP D — Accrued interest amounts (хуримтлагдсан хүү)
+    accrued_principal_interest = db.Column(db.Numeric(18, 2))         # Хур.үнд.хүү
+    accrued_commission_interest = db.Column(db.Numeric(18, 2))        # Хур.ком.хүү
+    accrued_penalty_interest = db.Column(db.Numeric(18, 2))           # Хур.тор.
+
+    # 🆕 GROUP E — Off-balance account (Балансын гадуурх данс)
+    off_balance_account_number = db.Column(db.String(50))             # Балансын гадуурх данс
+    off_balance_principal_interest = db.Column(db.Numeric(18, 2))     # Б/Г Хур.үнд.хүү
+    off_balance_commission_interest = db.Column(db.Numeric(18, 2))    # Б/Г Хур.ком.хүү
+    off_balance_penalty_interest = db.Column(db.Numeric(18, 2))       # Б/Г Хур.тор.хүү
+
+    # 🆕 GROUP F — Model calculation (their internal scoring)
+    model_calculation_date = db.Column(db.Date)                       # Модель тооцоолол огноо
+    model_calculation_value = db.Column(db.Numeric(10, 2))            # Модель тооцоолол
 
     # Import tracking
     source_system = db.Column(db.String(50))
@@ -765,6 +735,8 @@ class Loan(db.Model):
     assigned_user = db.relationship("User", foreign_keys=[assigned_to])
     assigned_zm = db.relationship("User", foreign_keys=[assigned_zm_id])
     assigned_zkha = db.relationship("User", foreign_keys=[assigned_zkha_id])
+    assigned_analyst = db.relationship("User", foreign_keys=[assigned_analyst_id])   # 🆕
+    assigned_hm = db.relationship("User", foreign_keys=[assigned_hm_id])             # 🆕
 
     related_parties = db.relationship("RelatedParty", back_populates="loan", lazy="dynamic")
     collaterals = db.relationship("Collateral", back_populates="loan", lazy="dynamic")
@@ -790,32 +762,28 @@ class Loan(db.Model):
     )
 
     def to_dict(self):
-        """
-        Full serialization. Output keys are designed to be backward-compatible
-        with existing templates where possible.
-        """
         return {
             "id": self.id,
             "borrower_id": self.borrower_id,
-            "loan_number": self.loan_account_number,  # backward compat key
+            "loan_number": self.loan_account_number,
             "loan_account_number": self.loan_account_number,
             "contract_number": self.contract_number,
             "product_type": self.loan_product.name if self.loan_product else None,
             "loan_product_id": self.loan_product_id,
-            "amount": float(self.amount_original) if self.amount_original else 0,
-            "amount_original": float(self.amount_original) if self.amount_original else 0,
-            "balance": float(self.amount_outstanding) if self.amount_outstanding else 0,
-            "amount_outstanding": float(self.amount_outstanding) if self.amount_outstanding else 0,
-            "amount_overdue": float(self.amount_overdue) if self.amount_overdue else 0,
-            "overdue_amount": float(self.amount_overdue) if self.amount_overdue else 0,  # backward compat
+            "amount": _to_float(self.amount_original),
+            "amount_original": _to_float(self.amount_original),
+            "balance": _to_float(self.amount_outstanding),
+            "amount_outstanding": _to_float(self.amount_outstanding),
+            "amount_overdue": _to_float(self.amount_overdue),
+            "overdue_amount": _to_float(self.amount_overdue),
             "currency": self.currency,
-            "interest_rate": float(self.interest_rate) if self.interest_rate else None,
+            "interest_rate": _to_float(self.interest_rate),
             "term_months": self.term_months,
             "disbursement_date": _date_to_str(self.disbursement_date),
             "maturity_date": _date_to_str(self.maturity_date),
             "status": _enum_to_str(self.status),
             "classification": _enum_to_str(self.classification),
-            "days_overdue": self.delinquency_days,  # backward compat key
+            "days_overdue": self.delinquency_days,
             "delinquency_days": self.delinquency_days,
             "delinquency_start_date": _date_to_str(self.delinquency_start_date),
             "current_escalation_stage": self.current_escalation_stage,
@@ -829,6 +797,44 @@ class Loan(db.Model):
             "assigned_to": self.assigned_to,
             "assigned_zm_id": self.assigned_zm_id,
             "assigned_zkha_id": self.assigned_zkha_id,
+
+            # 🆕 New staff assignments
+            "assigned_analyst_id": self.assigned_analyst_id,
+            "assigned_analyst_name": self.assigned_analyst.name if self.assigned_analyst else None,
+            "assigned_hm_id": self.assigned_hm_id,
+            "assigned_hm_name": self.assigned_hm.name if self.assigned_hm else None,
+
+            # 🆕 Tracking dates/balances
+            "theoretical_balance": _to_float(self.theoretical_balance),
+            "last_payment_date": _date_to_str(self.last_payment_date),
+            "review_date": _date_to_str(self.review_date),
+            "gb_notes": self.gb_notes,
+
+            # 🆕 Overdue breakdown
+            "overdue_principal": _to_float(self.overdue_principal),
+            "overdue_principal_days": self.overdue_principal_days,
+            "overdue_interest": _to_float(self.overdue_interest),
+            "overdue_interest_days": self.overdue_interest_days,
+            "overdue_commission_interest": _to_float(self.overdue_commission_interest),
+            "overdue_commission_days": self.overdue_commission_days,
+            "overdue_penalty_interest": _to_float(self.overdue_penalty_interest),
+            "overdue_penalty_days": self.overdue_penalty_days,
+
+            # 🆕 Accrued interest
+            "accrued_principal_interest": _to_float(self.accrued_principal_interest),
+            "accrued_commission_interest": _to_float(self.accrued_commission_interest),
+            "accrued_penalty_interest": _to_float(self.accrued_penalty_interest),
+
+            # 🆕 Off-balance account
+            "off_balance_account_number": self.off_balance_account_number,
+            "off_balance_principal_interest": _to_float(self.off_balance_principal_interest),
+            "off_balance_commission_interest": _to_float(self.off_balance_commission_interest),
+            "off_balance_penalty_interest": _to_float(self.off_balance_penalty_interest),
+
+            # 🆕 Model calculation
+            "model_calculation_date": _date_to_str(self.model_calculation_date),
+            "model_calculation_value": _to_float(self.model_calculation_value),
+
             "source_system": self.source_system,
             "created_at": _date_to_str(self.created_at),
             "updated_at": _date_to_str(self.updated_at),
@@ -838,10 +844,14 @@ class Loan(db.Model):
         return f"<Loan {self.loan_account_number} days={self.delinquency_days} status={self.status.value}>"
 
 
+# ============================================================================
+# MODEL — Collateral (UPDATED: 2 new fields)
+# ============================================================================
+
 class Collateral(db.Model):
     """
     Барьцаа хөрөнгө — Collateral assets tied to a loan.
-    Source: File 1 Rows 35-37, File 3 Rows 19-21, 39-40, 58-64
+    UPDATED: Added coverage_percent and is_unregistered for BPUH Excel coverage.
     """
     __tablename__ = "collaterals"
 
@@ -856,6 +866,10 @@ class Collateral(db.Model):
     valuation_date = db.Column(db.Date)
     valuator = db.Column(db.String(150))
     needs_revaluation = db.Column(db.Boolean, default=False)
+
+    # 🆕 NEW fields for BPUH coverage
+    coverage_percent = db.Column(db.Numeric(5, 2))     # Барьцаа хөрөнгийн зээл нөхөлтийн хувь
+    is_unregistered = db.Column(db.Boolean, default=False)  # Бүртгэгдээгүй хөрөнгө
 
     mpr_registration = db.Column(db.String(50))
     mpr_expiry_date = db.Column(db.Date)
@@ -872,13 +886,10 @@ class Collateral(db.Model):
     created_at = db.Column(db.DateTime, default=_utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=_utcnow, onupdate=_utcnow)
 
-    # Relationships
     loan = db.relationship("Loan", back_populates="collaterals")
     borrower = db.relationship("Borrower")
 
-    __table_args__ = (
-        db.Index("ix_collaterals_loan", "loan_id"),
-    )
+    __table_args__ = (db.Index("ix_collaterals_loan", "loan_id"),)
 
     def to_dict(self):
         return {
@@ -887,10 +898,12 @@ class Collateral(db.Model):
             "borrower_id": self.borrower_id,
             "collateral_type": _enum_to_str(self.collateral_type),
             "description": self.description,
-            "valuation_amount": float(self.valuation_amount) if self.valuation_amount else None,
+            "valuation_amount": _to_float(self.valuation_amount),
             "valuation_date": _date_to_str(self.valuation_date),
             "status": _enum_to_str(self.status),
             "needs_revaluation": self.needs_revaluation,
+            "coverage_percent": _to_float(self.coverage_percent),  # 🆕
+            "is_unregistered": self.is_unregistered,                 # 🆕
             "last_inspection_date": _date_to_str(self.last_inspection_date),
             "archive_location": self.archive_location,
         }
@@ -899,20 +912,76 @@ class Collateral(db.Model):
         return f"<Collateral {self.collateral_type.value} loan={self.loan_id}>"
 
 
+# ============================================================================
+# NEW MODEL — DepositAccount
+# ============================================================================
+
+class DepositAccount(db.Model):
+    """
+    🆕 Депозит данс — Deposit/payment accounts owned by borrowers.
+
+    Used by BPUH to check if borrower has money in their accounts that
+    could be applied to the overdue loan. One borrower can have multiple accounts.
+
+    Source: BPUH Excel reports — Төлбөр төлөх данс, Депозит данс
+    """
+    __tablename__ = "deposit_accounts"
+
+    id = db.Column(db.Integer, primary_key=True)
+    borrower_id = db.Column(db.Integer, db.ForeignKey("borrowers.id"), nullable=False, index=True)
+
+    account_number = db.Column(db.String(50), unique=True, nullable=False, index=True)
+    account_type = db.Column(db.Enum(DepositAccountType), default=DepositAccountType.PAYMENT, nullable=False)
+
+    balance = db.Column(db.Numeric(18, 2), default=0)              # Дансны үлдэгдэл
+    currency = db.Column(db.String(3), default="MNT")
+
+    is_frozen = db.Column(db.Boolean, default=False)               # Битүүмж эсэх
+    is_primary_payment = db.Column(db.Boolean, default=False)      # Анхдагч төлбөр төлөх данс эсэх
+
+    opened_date = db.Column(db.Date)
+    last_activity_date = db.Column(db.Date)
+
+    notes = db.Column(db.Text)
+
+    created_at = db.Column(db.DateTime, default=_utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=_utcnow, onupdate=_utcnow)
+
+    borrower = db.relationship("Borrower", back_populates="deposit_accounts")
+
+    __table_args__ = (
+        db.Index("ix_deposit_borrower", "borrower_id"),
+        db.Index("ix_deposit_primary", "is_primary_payment"),
+    )
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "borrower_id": self.borrower_id,
+            "account_number": self.account_number,
+            "account_type": _enum_to_str(self.account_type),
+            "balance": _to_float(self.balance),
+            "currency": self.currency,
+            "is_frozen": self.is_frozen,
+            "is_primary_payment": self.is_primary_payment,
+            "opened_date": _date_to_str(self.opened_date),
+            "last_activity_date": _date_to_str(self.last_activity_date),
+            "notes": self.notes,
+        }
+
+    def __repr__(self):
+        return f"<DepositAccount {self.account_number} balance={self.balance}>"
+
+
 
 # ============================================================================
-# MODELS — Delinquency Tracking & Contact History
+# MODEL — DelinquencyHistory (unchanged)
 # ============================================================================
 
 class DelinquencyHistory(db.Model):
     """
     Зөрчлийн түүх — Daily snapshots of every loan's delinquency state.
-
-    ⭐ MOST CRITICAL TABLE — solves the #1 pain point.
-    Source: File 1 Row 3 C9 — "Тайлан тухайн өдрийн байдлаар харуулдаг,
-    түүх үлдэхгүй учир заавал хадгалах шаардлага гардаг."
-
-    A cron job takes a daily snapshot → staff never loses historical data.
+    Solves the #1 pain point from File 1 Row 3: data was never preserved.
     """
     __tablename__ = "delinquency_history"
 
@@ -932,7 +1001,6 @@ class DelinquencyHistory(db.Model):
     source_report = db.Column(db.String(100))
     imported_at = db.Column(db.DateTime, default=_utcnow, nullable=False)
 
-    # Relationships
     loan = db.relationship("Loan", back_populates="delinquency_history")
 
     __table_args__ = (
@@ -948,8 +1016,8 @@ class DelinquencyHistory(db.Model):
             "loan_id": self.loan_id,
             "snapshot_date": _date_to_str(self.snapshot_date),
             "delinquency_days": self.delinquency_days,
-            "amount_overdue": float(self.amount_overdue) if self.amount_overdue else 0,
-            "amount_outstanding": float(self.amount_outstanding) if self.amount_outstanding else 0,
+            "amount_overdue": _to_float(self.amount_overdue),
+            "amount_outstanding": _to_float(self.amount_outstanding),
             "escalation_stage": self.escalation_stage,
             "classification": _enum_to_str(self.classification),
             "was_contacted": self.was_contacted,
@@ -960,15 +1028,12 @@ class DelinquencyHistory(db.Model):
         return f"<DelinquencyHistory loan={self.loan_id} date={self.snapshot_date} days={self.delinquency_days}>"
 
 
-class ContactLog(db.Model):
-    """
-    Холбогдсон бүртгэл — Every contact attempt: calls, SMS, emails, visits.
+# ============================================================================
+# MODEL — ContactLog (unchanged)
+# ============================================================================
 
-    Source: File 1 Rows 4-6, 20, 22
-    Pain points solved:
-      - phone_number_used tracks which number was dialled (File 1 Row 4 C10)
-      - Single notes field — no more duplicate entry (File 1 Row 18 C9)
-    """
+class ContactLog(db.Model):
+    """Холбогдсон бүртгэл — Every call, SMS, email, visit"""
     __tablename__ = "contact_logs"
 
     id = db.Column(db.Integer, primary_key=True)
@@ -994,7 +1059,6 @@ class ContactLog(db.Model):
     contact_date = db.Column(db.DateTime, nullable=False)
     created_at = db.Column(db.DateTime, default=_utcnow, nullable=False)
 
-    # Relationships
     loan = db.relationship("Loan", back_populates="contact_logs")
     borrower = db.relationship("Borrower", back_populates="contact_logs")
     related_party = db.relationship("RelatedParty", back_populates="contact_logs")
@@ -1019,7 +1083,7 @@ class ContactLog(db.Model):
             "was_reached": self.was_reached,
             "attempt_number": self.attempt_number,
             "reason_not_reached": self.reason_not_reached,
-            "outcome": "reached" if self.was_reached else "no_answer",  # backward compat
+            "outcome": "reached" if self.was_reached else "no_answer",
             "delinquency_reason": self.delinquency_reason,
             "promised_payment_date": _date_to_str(self.promised_payment_date),
             "notes": self.notes,
@@ -1035,19 +1099,11 @@ class ContactLog(db.Model):
 
 
 # ============================================================================
-# MODELS — Escalation Engine & Actions
+# MODEL — EscalationRule (unchanged)
 # ============================================================================
 
 class EscalationRule(db.Model):
-    """
-    Процессын дүрэм — File 1's 15-step escalation ladder encoded as data.
-    The daily scheduler checks loans against these rules and triggers actions.
-
-    Columns from File 1:
-      C1→step_number  C2→product_scope  C4→day_range  C5→regulation_name
-      C6→regulation_clause  C7→instruction  C8→required_action
-      C11→avg_time  C16→frequency  C17→systems_used  C18→responsible_role
-    """
+    """Процессын дүрэм — File 1's 15-step escalation ladder"""
     __tablename__ = "escalation_rules"
 
     id = db.Column(db.Integer, primary_key=True)
@@ -1079,12 +1135,9 @@ class EscalationRule(db.Model):
 
     is_active = db.Column(db.Boolean, default=True, nullable=False)
 
-    # Relationships
     actions = db.relationship("ActionTaken", back_populates="escalation_rule", lazy="dynamic")
 
-    __table_args__ = (
-        db.Index("ix_er_day_range", "day_range_start", "day_range_end"),
-    )
+    __table_args__ = (db.Index("ix_er_day_range", "day_range_start", "day_range_end"),)
 
     def to_dict(self):
         return {
@@ -1108,11 +1161,12 @@ class EscalationRule(db.Model):
         return f"<EscalationRule step={self.step_number} days={self.day_range_start}-{self.day_range_end}>"
 
 
+# ============================================================================
+# MODEL — ActionTaken (unchanged)
+# ============================================================================
+
 class ActionTaken(db.Model):
-    """
-    Авсан арга хэмжээ — Every formal action taken on a loan.
-    Source: File 1 C8 — all specific actions at each escalation stage.
-    """
+    """Авсан арга хэмжээ — Every formal action taken on a loan"""
     __tablename__ = "actions_taken"
 
     id = db.Column(db.Integer, primary_key=True)
@@ -1134,7 +1188,6 @@ class ActionTaken(db.Model):
 
     created_at = db.Column(db.DateTime, default=_utcnow, nullable=False)
 
-    # Relationships
     loan = db.relationship("Loan", back_populates="actions")
     escalation_rule = db.relationship("EscalationRule", back_populates="actions")
     document = db.relationship("Document", foreign_keys=[document_id])
@@ -1167,14 +1220,11 @@ class ActionTaken(db.Model):
 
 
 # ============================================================================
-# MODELS — Committee Reviews & Classification
+# MODEL — CommitteeReview (unchanged)
 # ============================================================================
 
 class CommitteeReview(db.Model):
-    """
-    Хорооны хэлэлцүүлэг — Committee discussions about delinquent loans.
-    Source: File 2 — 4 committee tracks (ЗДХ, ЧАХ for Normal/Watch and NPL).
-    """
+    """Хорооны хэлэлцүүлэг — Committee discussions from File 2"""
     __tablename__ = "committee_reviews"
 
     id = db.Column(db.Integer, primary_key=True)
@@ -1192,9 +1242,9 @@ class CommitteeReview(db.Model):
 
     decision = db.Column(db.Enum(CommitteeDecisionType))
     decision_number = db.Column(db.String(50))
-    decision_text = db.Column(db.Text)  # backward compat with old CommitteeDecision
-    next_action = db.Column(db.String(200))  # backward compat
-    deadline = db.Column(db.Date)  # backward compat
+    decision_text = db.Column(db.Text)
+    next_action = db.Column(db.String(200))
+    deadline = db.Column(db.Date)
 
     prepared_by = db.Column(db.Integer, db.ForeignKey("users.id"))
     consolidated_by = db.Column(db.Integer, db.ForeignKey("users.id"))
@@ -1204,7 +1254,6 @@ class CommitteeReview(db.Model):
     created_at = db.Column(db.DateTime, default=_utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=_utcnow, onupdate=_utcnow)
 
-    # Relationships
     loan = db.relationship("Loan", back_populates="committee_reviews")
     prepared_by_user = db.relationship("User", foreign_keys=[prepared_by])
     consolidated_by_user = db.relationship("User", foreign_keys=[consolidated_by])
@@ -1221,10 +1270,10 @@ class CommitteeReview(db.Model):
         return {
             "id": self.id,
             "loan_id": self.loan_id,
-            "case_id": self.loan_id,  # backward compat
+            "case_id": self.loan_id,
             "committee_type": _enum_to_str(self.committee_type),
             "meeting_date": _date_to_str(self.meeting_date),
-            "decision_date": _date_to_str(self.meeting_date),  # backward compat
+            "decision_date": _date_to_str(self.meeting_date),
             "current_classification": _enum_to_str(self.current_classification),
             "proposed_classification": _enum_to_str(self.proposed_classification),
             "explanation_notes": self.explanation_notes,
@@ -1242,11 +1291,12 @@ class CommitteeReview(db.Model):
         return f"<CommitteeReview loan={self.loan_id} type={self.committee_type.value}>"
 
 
+# ============================================================================
+# MODEL — ClassificationHistory (unchanged)
+# ============================================================================
+
 class ClassificationHistory(db.Model):
-    """
-    Ангиллын түүх — Every classification change.
-    Source: File 2 Rows 18-19 — "ангилал дээшлүүлэх / бууруулах"
-    """
+    """Ангиллын түүх — Every classification change"""
     __tablename__ = "classification_history"
 
     id = db.Column(db.Integer, primary_key=True)
@@ -1261,7 +1311,6 @@ class ClassificationHistory(db.Model):
     approved_by = db.Column(db.Integer, db.ForeignKey("users.id"))
     created_at = db.Column(db.DateTime, default=_utcnow, nullable=False)
 
-    # Relationships
     loan = db.relationship("Loan", back_populates="classification_history")
     committee_review = db.relationship("CommitteeReview", back_populates="classification_changes")
     approved_by_user = db.relationship("User", foreign_keys=[approved_by])
@@ -1283,18 +1332,16 @@ class ClassificationHistory(db.Model):
         }
 
     def __repr__(self):
-        return f"<ClassificationHistory loan={self.loan_id} {self.previous_classification.value}→{self.new_classification.value}>"
+        return f"<ClassificationHistory loan={self.loan_id}>"
+
 
 
 # ============================================================================
-# MODELS — Notifications, Documents, Insurance, Restructures
+# MODEL — Notification (unchanged)
 # ============================================================================
 
 class Notification(db.Model):
-    """
-    Мэдэгдэл — Auto-generated alerts to branches and staff.
-    Source: File 1 Rows 8-11 — replaces broken manual email process.
-    """
+    """Мэдэгдэл — Auto-generated alerts"""
     __tablename__ = "notifications"
 
     id = db.Column(db.Integer, primary_key=True)
@@ -1315,7 +1362,6 @@ class Notification(db.Model):
 
     created_at = db.Column(db.DateTime, default=_utcnow, nullable=False)
 
-    # Relationships
     loan = db.relationship("Loan", back_populates="notifications")
     recipient_branch = db.relationship("Branch", back_populates="notifications")
     recipient_user = db.relationship("User", foreign_keys=[recipient_user_id])
@@ -1344,11 +1390,12 @@ class Notification(db.Model):
         return f"<Notification type={self.notification_type.value} status={self.status.value}>"
 
 
+# ============================================================================
+# MODEL — Document (unchanged)
+# ============================================================================
+
 class Document(db.Model):
-    """
-    Баримт бичиг — Generated and stored documents.
-    Source: File 1 Rows 24, 29, 32, 33, 36, 38; File 3 Rows 12-13, 56-64
-    """
+    """Баримт бичиг — Generated documents"""
     __tablename__ = "documents"
 
     id = db.Column(db.Integer, primary_key=True)
@@ -1368,7 +1415,6 @@ class Document(db.Model):
     created_at = db.Column(db.DateTime, default=_utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=_utcnow, onupdate=_utcnow)
 
-    # Relationships
     loan = db.relationship("Loan", back_populates="documents")
     generated_by_user = db.relationship("User", foreign_keys=[generated_by])
     approved_by_user = db.relationship("User", foreign_keys=[approved_by])
@@ -1395,11 +1441,12 @@ class Document(db.Model):
         return f"<Document {self.document_type.value} loan={self.loan_id}>"
 
 
+# ============================================================================
+# MODEL — InsuranceCase (unchanged)
+# ============================================================================
+
 class InsuranceCase(db.Model):
-    """
-    Даатгалын тохиолдол — Insurance transfer tracking.
-    Source: File 1 Row 25 (40-day + 90-day deadlines), Row 39 (payout)
-    """
+    """Даатгалын тохиолдол"""
     __tablename__ = "insurance_cases"
 
     id = db.Column(db.Integer, primary_key=True)
@@ -1417,12 +1464,9 @@ class InsuranceCase(db.Model):
     created_at = db.Column(db.DateTime, default=_utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=_utcnow, onupdate=_utcnow)
 
-    # Relationships
     loan = db.relationship("Loan", back_populates="insurance_cases")
 
-    __table_args__ = (
-        db.Index("ix_ins_loan", "loan_id"),
-    )
+    __table_args__ = (db.Index("ix_ins_loan", "loan_id"),)
 
     def to_dict(self):
         return {
@@ -1433,7 +1477,7 @@ class InsuranceCase(db.Model):
             "deadline_90_days": _date_to_str(self.deadline_90_days),
             "materials_sent_date": _date_to_str(self.materials_sent_date),
             "insurance_decision": _enum_to_str(self.insurance_decision),
-            "payout_amount": float(self.payout_amount) if self.payout_amount else None,
+            "payout_amount": _to_float(self.payout_amount),
             "status": self.status,
         }
 
@@ -1441,12 +1485,12 @@ class InsuranceCase(db.Model):
         return f"<InsuranceCase loan={self.loan_id}>"
 
 
+# ============================================================================
+# MODEL — Restructure (unchanged) - MAX 2 PER LOAN
+# ============================================================================
+
 class Restructure(db.Model):
-    """
-    Бүтцийн өөрчлөлт — Loan restructuring records.
-    Source: File 1 Row 28 — "хамгийн ихдээ 2 удаа"
-    ⚠️ BUSINESS RULE: Maximum 2 restructures per loan!
-    """
+    """Бүтцийн өөрчлөлт - Maximum 2 per loan (File 1 Row 28)"""
     __tablename__ = "restructures"
 
     id = db.Column(db.Integer, primary_key=True)
@@ -1456,8 +1500,8 @@ class Restructure(db.Model):
     proposal_date = db.Column(db.Date, nullable=False)
     committee_review_id = db.Column(db.Integer, db.ForeignKey("committee_reviews.id"))
 
-    old_terms = db.Column(db.Text)  # JSON
-    new_terms = db.Column(db.Text)  # JSON
+    old_terms = db.Column(db.Text)
+    new_terms = db.Column(db.Text)
 
     decision = db.Column(db.Enum(RestructureDecision))
     approved_by = db.Column(db.Integer, db.ForeignKey("users.id"))
@@ -1465,14 +1509,11 @@ class Restructure(db.Model):
 
     created_at = db.Column(db.DateTime, default=_utcnow, nullable=False)
 
-    # Relationships
     loan = db.relationship("Loan", back_populates="restructures")
     committee_review = db.relationship("CommitteeReview")
     approved_by_user = db.relationship("User", foreign_keys=[approved_by])
 
-    __table_args__ = (
-        db.Index("ix_restr_loan", "loan_id"),
-    )
+    __table_args__ = (db.Index("ix_restr_loan", "loan_id"),)
 
     def to_dict(self):
         return {
@@ -1491,15 +1532,11 @@ class Restructure(db.Model):
 
 
 # ============================================================================
-# MODELS — Transfers & Outsourcing (kept from old schema, re-linked to Loan)
+# MODEL — CaseTransfer (unchanged)
 # ============================================================================
 
 class CaseTransfer(db.Model):
-    """
-    Хэрэг шилжүүлэг — Transfer of a loan case between entities.
-    Kept from old schema for backward compatibility.
-    Changed: FK now points to loans.id instead of collection_cases.id.
-    """
+    """Хэрэг шилжүүлэг"""
     __tablename__ = "case_transfers"
 
     id = db.Column(db.Integer, primary_key=True)
@@ -1511,18 +1548,15 @@ class CaseTransfer(db.Model):
     materials_attached = db.Column(db.Boolean, default=False)
     status = db.Column(db.Enum(TransferStatus), default=TransferStatus.PENDING)
 
-    # Relationships
     loan = db.relationship("Loan", back_populates="transfers")
     from_user = db.relationship("User", foreign_keys=[from_user_id])
 
-    __table_args__ = (
-        db.Index("ix_ct_loan", "loan_id"),
-    )
+    __table_args__ = (db.Index("ix_ct_loan", "loan_id"),)
 
     def to_dict(self):
         return {
             "id": self.id,
-            "case_id": self.loan_id,  # backward compat
+            "case_id": self.loan_id,
             "loan_id": self.loan_id,
             "from_user_id": self.from_user_id,
             "to_entity": self.to_entity,
@@ -1533,15 +1567,15 @@ class CaseTransfer(db.Model):
         }
 
     def __repr__(self):
-        return f"<CaseTransfer loan={self.loan_id} → {self.to_entity}>"
+        return f"<CaseTransfer loan={self.loan_id} -> {self.to_entity}>"
 
+
+# ============================================================================
+# MODEL — OutsourcingAssignment (unchanged)
+# ============================================================================
 
 class OutsourcingAssignment(db.Model):
-    """
-    Аутсорсинг — Loans assigned to external collection agencies.
-    Kept from old schema for backward compatibility.
-    Changed: FK now points to loans.id instead of collection_cases.id.
-    """
+    """Аутсорсинг"""
     __tablename__ = "outsourcing_assignments"
 
     id = db.Column(db.Integer, primary_key=True)
@@ -1559,7 +1593,6 @@ class OutsourcingAssignment(db.Model):
     created_at = db.Column(db.DateTime, default=_utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=_utcnow, onupdate=_utcnow)
 
-    # Relationships
     loan = db.relationship("Loan", back_populates="outsourcing_assignments")
     assigned_by_user = db.relationship("User", foreign_keys=[assigned_by])
 
@@ -1571,7 +1604,7 @@ class OutsourcingAssignment(db.Model):
     def to_dict(self):
         return {
             "id": self.id,
-            "case_id": self.loan_id,  # backward compat
+            "case_id": self.loan_id,
             "loan_id": self.loan_id,
             "company_name": self.company_name,
             "assigned_date": _date_to_str(self.assigned_date),
@@ -1584,19 +1617,15 @@ class OutsourcingAssignment(db.Model):
         }
 
     def __repr__(self):
-        return f"<OutsourcingAssignment loan={self.loan_id} → {self.company_name}>"
+        return f"<OutsourcingAssignment loan={self.loan_id} -> {self.company_name}>"
 
 
 # ============================================================================
-# MODELS — Audit Trail
+# MODEL — AuditLog (unchanged)
 # ============================================================================
 
 class AuditLog(db.Model):
-    """
-    Аудитын бүртгэл — Full audit trail.
-    Every CREATE, UPDATE, DELETE across all tables is logged here.
-    Source: File 3 control matrix principle.
-    """
+    """Аудитын бүртгэл"""
     __tablename__ = "audit_log"
 
     id = db.Column(db.Integer, primary_key=True)
@@ -1604,12 +1633,11 @@ class AuditLog(db.Model):
     action = db.Column(db.String(20), nullable=False)
     entity_type = db.Column(db.String(50), nullable=False)
     entity_id = db.Column(db.Integer)
-    old_value = db.Column(db.Text)  # JSON
-    new_value = db.Column(db.Text)  # JSON
+    old_value = db.Column(db.Text)
+    new_value = db.Column(db.Text)
     ip_address = db.Column(db.String(45))
     timestamp = db.Column(db.DateTime, default=_utcnow, nullable=False, index=True)
 
-    # Relationships
     user = db.relationship("User", foreign_keys=[user_id])
 
     __table_args__ = (
@@ -1636,44 +1664,54 @@ class AuditLog(db.Model):
 
 
 # ============================================================================
-# TABLE SUMMARY — 25 Models Total
+# TABLE SUMMARY - 26 Models Total (1 NEW: deposit_accounts)
 # ============================================================================
 #
-# ┌─── ORGANISATIONAL ───────────────────────────────────────────────────────┐
-# │  1. segments              — Retail / SMB                                │
-# │  2. regions               — Regional groupings                         │
-# │  3. branches              — Bank branches                              │
-# │  4. roles                 — Staff roles (26 from control matrix)       │
-# │  5. users                 — Staff members                              │
-# │  6. permissions           — Control matrix as permissions              │
-# ├─── REFERENCE ────────────────────────────────────────────────────────────┤
-# │  7. loan_products         — Loan product types                         │
-# │  8. source_systems        — External systems we import from            │
-# ├─── CORE ENTITIES ────────────────────────────────────────────────────────┤
-# │  9. borrowers             — Loan customers                             │
-# │ 10. related_parties       — Co-borrowers, guarantors, family           │
-# │ 11. loans                 — THE CENTRAL TABLE (absorbs CollectionCase) │
-# │ 12. collaterals           — Collateral assets                          │
-# ├─── DELINQUENCY TRACKING ─────────────────────────────────────────────────┤
-# │ 13. delinquency_history   — Daily snapshots ⭐ (#1 pain point solver)  │
-# │ 14. contact_logs          — Calls, SMS, emails, visits                 │
-# │ 15. escalation_rules      — Process rules engine (File 1)             │
-# │ 16. actions_taken         — Formal actions on loans                    │
-# ├─── COMMITTEES & CLASSIFICATION ──────────────────────────────────────────┤
-# │ 17. committee_reviews     — Committee discussions (File 2)             │
-# │ 18. classification_history— Classification change log                  │
-# ├─── SUPPORTING ───────────────────────────────────────────────────────────┤
-# │ 19. notifications         — Auto alerts to branches/staff              │
-# │ 20. documents             — Generated & stored documents               │
-# │ 21. insurance_cases       — Insurance transfer tracking                │
-# │ 22. restructures          — Restructuring (max 2 per loan!)           │
-# │ 23. case_transfers        — Transfer between entities                  │
-# │ 24. outsourcing_assignments— External collection agencies             │
-# ├─── AUDIT ────────────────────────────────────────────────────────────────┤
-# │ 25. audit_log             — Full audit trail                           │
-# └──────────────────────────────────────────────────────────────────────────┘
+# ORGANISATIONAL (6 tables):
+#   1. segments
+#   2. regions
+#   3. branches
+#   4. roles
+#   5. users
+#   6. permissions
 #
-# Enums: 23 type-safe enum classes
-# Every model has to_dict() for JSON serialization
-# Backward-compatible keys included where old templates depend on them
+# REFERENCE (2 tables):
+#   7. loan_products
+#   8. source_systems
+#
+# CORE ENTITIES (5 tables):
+#   9. borrowers          (UPDATED: +3 fields: workplace_name, phone_home, phone_work)
+#  10. related_parties
+#  11. loans              (UPDATED: +22 fields: interest breakdown, off-balance,
+#                          tracking dates, model calc, analyst/HM assignments)
+#  12. collaterals        (UPDATED: +2 fields: coverage_percent, is_unregistered)
+#  13. deposit_accounts   (NEW)  - payment/savings accounts per borrower
+#
+# DELINQUENCY TRACKING (3 tables):
+#  14. delinquency_history
+#  15. contact_logs
+#  16. escalation_rules
+#
+# ACTIONS (1 table):
+#  17. actions_taken
+#
+# GOVERNANCE (2 tables):
+#  18. committee_reviews
+#  19. classification_history
+#
+# SUPPORTING (6 tables):
+#  20. notifications
+#  21. documents
+#  22. insurance_cases
+#  23. restructures
+#  24. case_transfers
+#  25. outsourcing_assignments
+#
+# AUDIT (1 table):
+#  26. audit_log
+#
+# COVERAGE:
+#   Excel #1 (BPUH daily v1, 72 cols): 97% covered
+#   Excel #2 (BPUH daily v2, 46 cols): 100% covered
+#
 # ============================================================================
