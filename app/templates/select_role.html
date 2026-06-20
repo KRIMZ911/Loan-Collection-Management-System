@@ -8,23 +8,30 @@
 </head>
 <body>
 <div class="role-page">
+
     <div class="role-title">
         <h1>📊 Зээл Төлүүлэх Удирдлагын Систем</h1>
-        <p>Collection Management System — Нэвтрэх эрхээ сонгоно уу</p>
+        <p>Collection Management System — Хэрэглэгчээ сонгоно уу</p>
     </div>
+
     <div class="role-grid">
-        {% for role in roles %}
-        <form method="POST" action="{{ url_for('auth.select_role') }}" style="display:contents;">
-            <input type="hidden" name="role" value="{{ role.id }}">
-            <button type="submit" class="role-card">
-                <div class="role-accent" style="background:{{ role.color }}"></div>
-                <span class="icon">{{ role.icon }}</span>
-                <h3>{{ role.name }}</h3>
-                <div class="sub">{{ role.sub }}</div>
-            </button>
-        </form>
+        {% for user in users %}
+            {% set meta = dashboard_meta.get(user.role.dashboard_code, default_meta) %}
+            <form method="POST" action="{{ url_for('auth.login') }}">
+                <input type="hidden" name="user_id" value="{{ user.id }}">
+                <button type="submit" class="role-card">
+                    <div class="role-accent" style="background:{{ meta.color }}"></div>
+                    <span class="icon">{{ meta.icon }}</span>
+                    <h3>{{ user.name }}</h3>
+                    <div class="sub">
+                        {{ user.role.name_mn }}
+                        {% if user.branch %}<br>🏢 {{ user.branch.name }}{% endif %}
+                    </div>
+                </button>
+            </form>
         {% endfor %}
     </div>
+
 </div>
 </body>
 </html>

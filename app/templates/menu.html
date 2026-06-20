@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="mn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CMS — Дашбоард сонгох</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .menu-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            max-width: 1200px;
+            margin: 24px auto;
+            padding: 0 24px;
+        }
+        .menu-header .who {
+            font-size: 14px;
+            color: #64748B;
+        }
+        .menu-header .who strong {
+            color: #0F172A;
+            font-size: 16px;
+        }
+        .menu-header .logout {
+            color: #DC2626;
+            text-decoration: none;
+            font-size: 14px;
+        }
+        .menu-header .logout:hover {
+            text-decoration: underline;
+        }
+        .role-card a {
+            text-decoration: none;
+            color: inherit;
+            display: block;
+            height: 100%;
+        }
+    </style>
+</head>
+<body>
+
+<div class="menu-header">
+    <div class="who">
+        <strong>{{ user_name }}</strong><br>
+        {{ role_name }}{% if role_sub %} — 🏢 {{ role_sub }}{% endif %}
+    </div>
+    <a href="{{ url_for('auth.logout') }}" class="logout">Гарах →</a>
+</div>
+
+<div class="role-page">
+
+    <div class="role-title">
+        <h1>📊 Дашбоардаа сонгоно уу</h1>
+        <p>Та дараах самбаруудад нэвтрэх эрхтэй</p>
+    </div>
+
+    <div class="role-grid">
+        {% for item in menu_items %}
+            <div class="role-card">
+                <a href="{{ item.url }}">
+                    <div class="role-accent" style="background:{{ item.color }}"></div>
+                    <span class="icon">{{ item.icon }}</span>
+                    <h3>{{ item.label_mn }}</h3>
+                    <div class="sub">{{ item.sub_mn }}</div>
+                </a>
+            </div>
+        {% endfor %}
+    </div>
+
+</div>
+
+</body>
+</html>

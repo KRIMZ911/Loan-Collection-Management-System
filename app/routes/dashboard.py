@@ -1,81 +1,85 @@
 """
-Dashboard routes — UPDATED with pagination (50 per page).
-Templates stay untouched except for pagination controls.
-Wrappers translate new model attrs to old template names.
-"""
+app/routes/dashboard.py
+========================
+Phase B unified routing:
+    /menu                       → Card menu for users with 2+ dashboards
+    /dashboard/<dashboard_type> → The actual dashboard (4 universal types)
+    /case/<loan_id>             → Case detail page
 
+The 4 universal dashboard types are: bank, regional, branches, loans.
+For Phase B only `loans` is fully built; the others are stubs that will be
+filled in during Phases C, D, E.
+
+All scope filtering goes through access_control.scope_loans() etc. — this
+file does NOT do any geographic / segment filtering manually.
+"""
 import math
 from types import SimpleNamespace
-from flask import Blueprint, render_template, session, redirect, url_for, request
+from flask import (
+    Blueprint, render_template, render_template_string,
+    redirect, url_for, request, abort,
+)
 from sqlalchemy import func
+
 from app import db
 from app.models import (
     User, Borrower, Loan, ContactLog, CaseTransfer,
-    OutsourcingAssignment, CommitteeReview, Role,
-    LoanStatus, SegmentType,
+    OutsourcingAssignment, Branch,
+    LoanStatus,
 )
 from app.services.scoring import score_cases, RISK_LEVELS
-
+from app.services.access_control import (
+    current_user,
+    get_dashboards,
+    get_default_dashboard,
+    can_access_dashboard,
+    scope_loans,
+    can_view_loan,
+    mask_personal_info,
+    require_login,
+    require_dashboard,
+    DASHBOARD_CATALOG,
+)
 
 dashboard_bp = Blueprint("dashboard", __name__)
+
 
 # Pagination — rows per page for list dashboards
 PER_PAGE = 50
 
-NAV_ITEMS = {
-    "bpuh": [
-        {"id": "cases", "icon": "📋", "label": "Миний хэрэг"},
-        {"id": "history", "icon": "🕐", "label": "Үйлдлийн түүх"},
-        {"id": "cc", "icon": "💳", "label": "Кредит карт тайлан"},
-    ],
-    "zm": [
-        {"id": "cases", "icon": "📋", "label": "Салбарын хэрэг"},
-        {"id": "summary", "icon": "📊", "label": "Нэгтгэл"},
-        {"id": "transfer", "icon": "➡️", "label": "ТАУГ шилжүүлэг"},
-        {"id": "reports", "icon": "📈", "label": "Тайлан"},
-    ],
-    "jdbbg": [
-        {"id": "companies", "icon": "🏢", "label": "Компаниуд"},
-        {"id": "cases", "icon": "📋", "label": "Хэрэг"},
-        {"id": "reports", "icon": "📈", "label": "Тайлан"},
-    ],
-    "taug": [
-        {"id": "received", "icon": "📥", "label": "Хүлээн авсан"},
-        {"id": "assign", "icon": "👤", "label": "Хуваарилалт"},
-        {"id": "outsrc", "icon": "🏢", "label": "Outsourcing"},
-        {"id": "reqlog", "icon": "📋", "label": "Хүсэлт бүртгэл"},
-    ],
-    "outsourcing": [
-        {"id": "cases", "icon": "📋", "label": "Миний хэрэг"},
-        {"id": "perf", "icon": "📊", "label": "Гүйцэтгэл"},
-        {"id": "commission", "icon": "💰", "label": "Commission"},
-    ],
-    "senior": [
-        {"id": "dash", "icon": "📊", "label": "Дашбоард"},
-        {"id": "perf", "icon": "🏆", "label": "Гүйцэтгэл"},
-        {"id": "time", "icon": "⏱️", "label": "Хугацаа"},
-        {"id": "queue", "icon": "📋", "label": "Queue"},
-    ],
-    "mgmt": [
-        {"id": "dash", "icon": "📊", "label": "Дашбоард"},
-        {"id": "kpi", "icon": "🎯", "label": "KPI"},
-        {"id": "outsrc", "icon": "🏢", "label": "Outsourcing"},
-        {"id": "reports", "icon": "📈", "label": "Тайлан"},
-    ],
-}
 
+# ════════════════════════════════════════════════════════════════════════════
+# CONTEXT + HELPERS
+# ════════════════════════════════════════════════════════════════════════════
 
-def get_base_context():
-    role = session.get("role", "bpuh")
+def get_base_context(active_dashboard=None):
+    """Shared template context — pulled from the logged-in user."""
+    user = current_user()
     return {
-        "role": role,
-        "user_name": session.get("user_name", "Зочин"),
-        "role_name": session.get("role_name", ""),
-        "role_sub": session.get("role_sub", ""),
-        "role_color": session.get("role_color", "#2563EB"),
-        "nav_items": NAV_ITEMS.get(role, []),
-        "risk_levels": RISK_LEVELS,
+        "user":               user,
+        "user_name":          user.name if user else "Зочин",
+        "role_name":          user.role.name_mn if user and user.role else "",
+        "role_sub":           user.branch.name if user and user.branch else "",
+        "active_dashboard":   active_dashboard,
+        "user_dashboards":    _menu_items_for(user),
+        "risk_levels":        RISK_LEVELS,
     }
+
+
+def _menu_items_for(user):
+    """Return a list of dashboard menu items for the user, in display order."""
+    items = []
+    for dash_type in get_dashboards(user):
+        meta = DASHBOARD_CATALOG.get(dash_type, {})
+        items.append({
+            "type":     dash_type,
+            "icon":     meta.get("icon", ""),
+            "label_mn": meta.get("label_mn", dash_type),
+            "sub_mn":   meta.get("sub_mn", ""),
+            "color":    meta.get("color", "#64748B"),
+            "url":      url_for("dashboard.dashboard", dashboard_type=dash_type),
+        })
+    return items
 
 
 def _build_pagination(page, total_count):
@@ -83,20 +87,20 @@ def _build_pagination(page, total_count):
     total_pages = max(1, math.ceil(total_count / PER_PAGE))
     page = max(1, min(page, total_pages))
     return {
-        "page": page,
-        "per_page": PER_PAGE,
-        "total": total_count,
-        "total_pages": total_pages,
-        "has_prev": page > 1,
-        "has_next": page < total_pages,
-        "prev_page": max(1, page - 1),
-        "next_page": min(total_pages, page + 1),
-        "start_row": (page - 1) * PER_PAGE + 1 if total_count > 0 else 0,
-        "end_row": min(page * PER_PAGE, total_count),
+        "page":         page,
+        "per_page":     PER_PAGE,
+        "total":        total_count,
+        "total_pages":  total_pages,
+        "has_prev":     page > 1,
+        "has_next":     page < total_pages,
+        "prev_page":    max(1, page - 1),
+        "next_page":    min(total_pages, page + 1),
+        "start_row":    (page - 1) * PER_PAGE + 1 if total_count > 0 else 0,
+        "end_row":      min(page * PER_PAGE, total_count),
     }
 
 
-# ── SimpleNamespace wrappers: new model attrs → old template names ──
+# ── SimpleNamespace wrappers: new model attrs → old template names ─────────
 
 def _w_case(loan):
     return SimpleNamespace(
@@ -106,7 +110,6 @@ def _w_case(loan):
         status=loan.status.value if loan.status else "active",
         updated_at=loan.updated_at,
     )
-
 
 def _w_loan(loan):
     return SimpleNamespace(
@@ -121,10 +124,12 @@ def _w_loan(loan):
         maturity_date=loan.maturity_date,
     )
 
-
 def _w_borrower(borrower, hide=False):
     if hide:
-        return SimpleNamespace(name="***", register_no="***", phone="***", email="***", address="***")
+        return SimpleNamespace(
+            name="***", register_no="***", phone="***",
+            email="***", address="***",
+        )
     return SimpleNamespace(
         name=f"{borrower.last_name} {borrower.first_name}",
         register_no=borrower.register_number,
@@ -133,312 +138,234 @@ def _w_borrower(borrower, hide=False):
         address=borrower.address_residential,
     )
 
-
 def _w_risk(risk_info):
-    rl = risk_info.get('risk_level', {})
+    rl = risk_info.get("risk_level", {})
     return SimpleNamespace(
-        score=risk_info.get('score', 0),
-        css_class=rl.get('css_class', 'risk-low'),
-        emoji=rl.get('emoji', ''),
-        label_mn=rl.get('label_mn', ''),
-        color=rl.get('color', '#16A34A'),
-        level=rl.get('level', 'low'),
+        score=risk_info.get("score", 0),
+        css_class=rl.get("css_class", "risk-low"),
+        emoji=rl.get("emoji", ""),
+        label_mn=rl.get("label_mn", ""),
+        color=rl.get("color", "#16A34A"),
+        level=rl.get("level", "low"),
     )
-
 
 def _w_action(cl):
     return SimpleNamespace(
         created_at=cl.contact_date,
-        action_type=cl.contact_type.value if cl.contact_type else 'note',
-        outcome='no_answer' if not cl.was_reached else 'contacted',
-        notes=cl.notes or '',
+        action_type=cl.contact_type.value if cl.contact_type else "note",
+        outcome="no_answer" if not cl.was_reached else "contacted",
+        notes=cl.notes or "",
     )
-
 
 def _w_transfer(t):
     return SimpleNamespace(
         transfer_date=t.transfer_date,
         to_entity=t.to_entity,
-        reason=t.reason or '',
-        status=t.status.value if t.status else 'pending',
+        reason=t.reason or "",
+        status=t.status.value if t.status else "pending",
     )
 
-
 def _pack_scored(scored):
-    return [(_w_case(l), _w_loan(l), _w_borrower(b), _w_risk(r)) for l, b, r in scored]
-
+    return [(_w_case(l), _w_loan(l), _w_borrower(b), _w_risk(r))
+            for l, b, r in scored]
 
 def _build_kpis(scored):
     total = len(scored)
     total_amount = sum(float(l.amount_overdue or 0) for l, b, r in scored)
-    high_risk = sum(1 for l, b, r in scored if r.get('score', 0) >= 50)
+    high_risk = sum(1 for l, b, r in scored if r.get("score", 0) >= 50)
     return [
-        {"label": "Энэ хуудсанд", "value": total, "sub": "Зөрчилтэй зээл"},
-        {"label": "Энэ хуудсын дүн", "value": f"{total_amount:,.0f} ₮", "sub": "Хэтэрсэн өр"},
-        {"label": "Өндөр эрсдэл", "value": high_risk, "sub": "Эрсдэл 50+"},
+        {"label": "Энэ хуудсанд", "value": total,
+         "sub": "Зөрчилтэй зээл"},
+        {"label": "Энэ хуудсын дүн", "value": f"{total_amount:,.0f} ₮",
+         "sub": "Хэтэрсэн өр"},
+        {"label": "Өндөр эрсдэл", "value": high_risk,
+         "sub": "Эрсдэл 50+"},
     ]
 
 
-@dashboard_bp.route("/dashboard")
-def dashboard():
-    role = session.get("role")
-    if not role:
-        return redirect(url_for("auth.index"))
+# ════════════════════════════════════════════════════════════════════════════
+# ROUTES
+# ════════════════════════════════════════════════════════════════════════════
+
+@dashboard_bp.route("/menu")
+@require_login
+def menu():
+    """Show the menu of dashboards available to this user."""
+    user = current_user()
+    items = _menu_items_for(user)
+
+    # If somehow they only have one, skip the menu
+    if len(items) <= 1:
+        if items:
+            return redirect(items[0]["url"])
+        abort(403)
+
+    ctx = get_base_context()
+    ctx["menu_items"] = items
+    return render_template("menu.html", **ctx)
+
+
+@dashboard_bp.route("/dashboard/<dashboard_type>")
+@require_login
+def dashboard(dashboard_type):
+    """Universal dashboard router — dispatches to the right builder."""
+    user = current_user()
+
+    if not can_access_dashboard(user, dashboard_type):
+        abort(403)
+
     builders = {
-        "bpuh": _build_bpuh, "zm": _build_zm, "jdbbg": _build_jdbbg,
-        "taug": _build_taug, "outsourcing": _build_outsourcing,
-        "senior": _build_senior, "mgmt": _build_mgmt,
+        "bank":     _build_bank,
+        "regional": _build_regional,
+        "branches": _build_branches,
+        "loans":    _build_loans,
     }
-    return builders.get(role, _build_bpuh)()
+    builder = builders.get(dashboard_type)
+    if builder is None:
+        abort(404)
+    return builder()
 
 
 @dashboard_bp.route("/case/<int:loan_id>")
+@require_login
 def case_detail(loan_id):
-    role = session.get("role")
-    if not role:
-        return redirect(url_for("auth.index"))
+    """Case detail page — works for any dashboard type."""
+    user = current_user()
     loan = Loan.query.get_or_404(loan_id)
+
+    if not can_view_loan(user, loan):
+        abort(403)
+
     borrower = Borrower.query.get(loan.borrower_id)
-    hide = (role == "outsourcing")
-    contacts = ContactLog.query.filter_by(loan_id=loan.id).order_by(ContactLog.contact_date.desc()).limit(50).all()
+    hide = mask_personal_info(user)
+    contacts = (ContactLog.query
+                .filter_by(loan_id=loan.id)
+                .order_by(ContactLog.contact_date.desc())
+                .limit(50).all())
     transfers = CaseTransfer.query.filter_by(loan_id=loan.id).all()
     scored = score_cases([(loan, borrower)])
     ri = scored[0][2] if scored else {}
+
     ctx = get_base_context()
     ctx.update({
-        "loan": _w_loan(loan),
-        "case": _w_case(loan),
-        "borrower": _w_borrower(borrower, hide=hide) if borrower else SimpleNamespace(name="—", register_no="—", phone="—", email="—", address="—"),
-        "risk": _w_risk(ri),
-        "actions": [_w_action(c) for c in contacts],
+        "loan":      _w_loan(loan),
+        "case":      _w_case(loan),
+        "borrower":  _w_borrower(borrower, hide=hide) if borrower
+                     else SimpleNamespace(name="—", register_no="—",
+                                          phone="—", email="—", address="—"),
+        "risk":      _w_risk(ri),
+        "actions":   [_w_action(c) for c in contacts],
         "transfers": [_w_transfer(t) for t in transfers],
     })
     return render_template("dashboard/case_detail.html", **ctx)
 
 
-def _build_bpuh():
-    """БПҮХ — Consumer delinquent loans (PAGINATED, 50 per page)."""
+# ════════════════════════════════════════════════════════════════════════════
+# DASHBOARD BUILDERS
+# ════════════════════════════════════════════════════════════════════════════
+
+def _build_loans():
+    """
+    Loans dashboard — works for everyone.
+    Scope is automatic via scope_loans():
+        - Branch worker:     own branch only
+        - Branch manager:    own branch only
+        - Regional director: all branches in their region
+        - Executive / БПҮХ:  bank-wide (with policy-defined segment filter)
+        - Outsourcing:       only their assigned cases (PII masked)
+    """
+    user = current_user()
     page = request.args.get("page", 1, type=int)
 
-    base_query = (
-        db.session.query(Loan, Borrower)
-        .join(Borrower, Loan.borrower_id == Borrower.id)
-        .filter(Borrower.segment == SegmentType.RETAIL)
-        .filter(Loan.delinquency_days > 0)
-        .order_by(Loan.delinquency_days.desc())
-    )
-    total_count = base_query.count()
-    pagination = _build_pagination(page, total_count)
+    # 🎯 One line replaces all the manual filtering
+    q = scope_loans(Loan.query, user).filter(Loan.delinquency_days > 0)
+    total = q.count()
+    loans = (q.order_by(Loan.delinquency_days.desc())
+              .offset((page - 1) * PER_PAGE)
+              .limit(PER_PAGE).all())
 
-    page = pagination['page']  # safe page
-    offset = (page - 1) * PER_PAGE
-    cases_raw = base_query.offset(offset).limit(PER_PAGE).all()
+    rows = [(l, l.borrower) for l in loans]
+    scored = score_cases(rows)
+    cases = _pack_scored(scored)
 
-    scored = score_cases(cases_raw)
-    ctx = get_base_context()
+    ctx = get_base_context(active_dashboard="loans")
     ctx.update({
-        "scored_cases": _pack_scored(scored),
-        "kpis": _build_kpis(scored),
-        "pagination": pagination,
+        "cases":      cases,
+        "kpis":       _build_kpis(scored),
+        "pagination": _build_pagination(page, total),
+        "hide_pii":   mask_personal_info(user),
     })
-    return render_template("dashboard/bpuh.html", **ctx)
+    return render_template("dashboard/loans.html", **ctx)
 
 
-def _build_zm():
-    """ЗМ — Branch delinquent loans (PAGINATED)."""
-    page = request.args.get("page", 1, type=int)
-    user = User.query.get(session.get("user_id"))
-    branch_id = user.branch_id if user else None
-    branch_name = user.branch.name if user and user.branch else "—"
+# ─── STUBS — Phases C, D, E will fill these in ─────────────────────────────
 
-    base_query = (
-        db.session.query(Loan, Borrower)
-        .join(Borrower, Loan.borrower_id == Borrower.id)
-        .filter(Loan.delinquency_days > 0)
+_STUB_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="mn">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ title }} — CMS</title>
+    {{ url_for('static', filename='css/style.css') }}
+    <style>
+        .stub-page { max-width: 720px; margin: 80px auto; padding: 32px;
+                     text-align: center; }
+        .stub-page h1 { font-size: 48px; margin-bottom: 16px; }
+        .stub-page p { color: #64748B; font-size: 18px; }
+        .stub-back { display: inline-block; margin-top: 24px;
+                     padding: 10px 24px; background: #2563EB;
+                     color: white; border-radius: 8px;
+                     text-decoration: none; }
+    </style>
+</head>
+<body>
+<div class="stub-page">
+    <h1>{{ icon }} {{ title }}</h1>
+    <p>{{ message }}</p>
+    <a href="{{ back_url }}" class="stub-back">← Буцах</a>
+</div>
+</body>
+</html>
+"""
+
+
+def _build_branches():
+    """Stub — Phase D will build this."""
+    user = current_user()
+    back = url_for("dashboard.menu") if len(get_dashboards(user)) > 1 \
+           else url_for("auth.logout")
+    return render_template_string(
+        _STUB_TEMPLATE,
+        icon="🏢",
+        title="Салбарын самбар",
+        message="Энэ дашбоард удахгүй нэмэгдэнэ. (Phase D)",
+        back_url=back,
     )
-    if branch_id:
-        base_query = base_query.filter(Loan.branch_id == branch_id)
-    base_query = base_query.order_by(Loan.delinquency_days.desc())
-
-    total_count = base_query.count()
-    pagination = _build_pagination(page, total_count)
-
-    page = pagination['page']
-    offset = (page - 1) * PER_PAGE
-    cases_raw = base_query.offset(offset).limit(PER_PAGE).all()
-
-    scored = score_cases(cases_raw)
-    months = ['1-р сар', '2-р сар', '3-р сар', '4-р сар', '5-р сар', '6-р сар']
-    import random as _r; payments = [_r.randint(3, 15) for _ in months]
-    ctx = get_base_context()
-    ctx.update({
-        "scored_cases": _pack_scored(scored),
-        "kpis": _build_kpis(scored),
-        "branch": branch_name,
-        "chart_months": months,
-        "chart_payments": payments,
-        "pagination": pagination,
-    })
-    return render_template("dashboard/zm.html", **ctx)
 
 
-def _build_jdbbg():
-    """ЖДББГ — Corporate SMB loans (PAGINATED, grouped within page)."""
-    page = request.args.get("page", 1, type=int)
-
-    base_query = (
-        db.session.query(Loan, Borrower)
-        .join(Borrower, Loan.borrower_id == Borrower.id)
-        .filter(Borrower.segment == SegmentType.SMB)
-        .filter(Loan.delinquency_days > 0)
-        .order_by(Loan.delinquency_days.desc())
+def _build_regional():
+    """Stub — Phase E will build this."""
+    user = current_user()
+    back = url_for("dashboard.menu") if len(get_dashboards(user)) > 1 \
+           else url_for("auth.logout")
+    return render_template_string(
+        _STUB_TEMPLATE,
+        icon="🌍",
+        title="Бүсийн самбар",
+        message="Энэ дашбоард удахгүй нэмэгдэнэ. (Phase E)",
+        back_url=back,
     )
-    total_count = base_query.count()
-    pagination = _build_pagination(page, total_count)
-
-    page = pagination['page']
-    offset = (page - 1) * PER_PAGE
-    cases_raw = base_query.offset(offset).limit(PER_PAGE).all()
-
-    scored = score_cases(cases_raw)
-    # Group this page's loans by borrower name as 'companies'
-    companies = {}
-    for loan, borrower, risk_info in scored:
-        name = f"{borrower.last_name} {borrower.first_name}"
-        if name not in companies:
-            companies[name] = SimpleNamespace(
-                worst_risk=_w_risk(risk_info),
-                cases=[], delinquent_amount=0, total_loans=0,
-            )
-        c = companies[name]
-        c.cases.append((_w_case(loan), _w_loan(loan), _w_borrower(borrower), _w_risk(risk_info)))
-        c.delinquent_amount += float(loan.amount_overdue or 0)
-        c.total_loans += 1
-        if risk_info.get('score', 0) > c.worst_risk.score:
-            c.worst_risk = _w_risk(risk_info)
-    ctx = get_base_context()
-    ctx.update({
-        "companies": companies,
-        "kpis": _build_kpis(scored),
-        "pagination": pagination,
-    })
-    return render_template("dashboard/jdbbg.html", **ctx)
 
 
-def _build_taug():
-    """ТАУГ — NPL cases (PAGINATED)."""
-    page = request.args.get("page", 1, type=int)
-
-    base_query = (
-        db.session.query(Loan, Borrower)
-        .join(Borrower, Loan.borrower_id == Borrower.id)
-        .filter(Loan.status.in_([
-            LoanStatus.TRANSFERRED_TAUG, LoanStatus.LEGAL,
-            LoanStatus.COURT, LoanStatus.OUTSOURCED,
-        ]))
-        .order_by(Loan.updated_at.desc())
+def _build_bank():
+    """Stub — Phase F (optional) will build this."""
+    user = current_user()
+    back = url_for("dashboard.menu") if len(get_dashboards(user)) > 1 \
+           else url_for("auth.logout")
+    return render_template_string(
+        _STUB_TEMPLATE,
+        icon="🏦",
+        title="Банкны нэгтгэл",
+        message="Энэ дашбоард удахгүй нэмэгдэнэ. (Phase F)",
+        back_url=back,
     )
-    total_count = base_query.count()
-    pagination = _build_pagination(page, total_count)
-
-    page = pagination['page']
-    offset = (page - 1) * PER_PAGE
-    cases_raw = base_query.offset(offset).limit(PER_PAGE).all()
-
-    scored = score_cases(cases_raw)
-    ctx = get_base_context()
-    ctx.update({
-        "scored_cases": _pack_scored(scored),
-        "kpis": _build_kpis(scored),
-        "pagination": pagination,
-    })
-    return render_template("dashboard/taug.html", **ctx)
-
-
-def _build_outsourcing():
-    rows = (
-        db.session.query(OutsourcingAssignment, Loan, Borrower)
-        .join(Loan, OutsourcingAssignment.loan_id == Loan.id)
-        .join(Borrower, Loan.borrower_id == Borrower.id)
-        .all()
-    )
-    assignments = [(oa, _w_case(loan), _w_loan(loan)) for oa, loan, b in rows]
-    total_assigned = sum(float(l.amount_overdue or 0) for oa, l, b in rows)
-    total_collected = sum(float(oa.collected_amount or 0) for oa, l, b in rows)
-    kpis = [
-        {"label": "Нийт хэрэг", "value": len(assignments), "sub": "Хуваарилагдсан"},
-        {"label": "Нийт дүн", "value": f"{total_assigned:,.0f} ₮", "sub": "Хэтэрсэн өр"},
-        {"label": "Цуглуулсан", "value": f"{total_collected:,.0f} ₮", "sub": f"{round((total_collected/total_assigned*100) if total_assigned>0 else 0)}%"},
-    ]
-    ctx = get_base_context()
-    ctx.update({"assignments": assignments, "kpis": kpis})
-    return render_template("dashboard/outsourcing.html", **ctx)
-
-
-def _build_senior():
-    rows = (
-        db.session.query(User, func.count(Loan.id).label('cc'))
-        .join(Loan, Loan.assigned_to == User.id)
-        .filter(Loan.delinquency_days > 0)
-        .group_by(User.id).all()
-    )
-    collectors = []
-    for user, cc in rows:
-        ac = ContactLog.query.filter_by(contacted_by=user.id).count()
-        res = Loan.query.filter_by(assigned_to=user.id, status=LoanStatus.RESOLVED).count()
-        avg_d = db.session.query(func.avg(Loan.delinquency_days)).filter(Loan.assigned_to==user.id, Loan.delinquency_days>0).scalar() or 0
-        collectors.append(SimpleNamespace(
-            name=user.name, cases=cc, actions=ac, resolved=res,
-            success_rate=round((res/cc*100) if cc>0 else 0),
-            avg_days=round(avg_d),
-        ))
-    collectors.sort(key=lambda x: x.success_rate, reverse=True)
-    total_d = Loan.query.filter(Loan.delinquency_days > 0).count()
-    total_a = float(db.session.query(func.sum(Loan.amount_overdue)).filter(Loan.delinquency_days > 0).scalar() or 0)
-    kpis = [
-        {"label": "Нийт хэрэг", "value": total_d, "sub": "Зөрчилтэй"},
-        {"label": "Нийт дүн", "value": f"{total_a:,.0f} ₮", "sub": "Хэтэрсэн өр"},
-        {"label": "Ажилтан", "value": len(collectors), "sub": "Хянагч"},
-    ]
-    ctx = get_base_context()
-    ctx.update({"collectors": collectors, "kpis": kpis})
-    return render_template("dashboard/senior.html", **ctx)
-
-
-def _build_mgmt():
-    total_loans = Loan.query.count()
-    total_d = Loan.query.filter(Loan.delinquency_days > 0).count()
-    total_a = float(db.session.query(func.sum(Loan.amount_overdue)).filter(Loan.delinquency_days > 0).scalar() or 0)
-    resolved = Loan.query.filter_by(status=LoanStatus.RESOLVED).count()
-    court = Loan.query.filter_by(status=LoanStatus.COURT).count()
-    court_pct = round((court/total_d*100) if total_d>0 else 0)
-    kpis = [
-        {"label": "Нийт зээл", "value": total_loans, "sub": "Нийт багц"},
-        {"label": "Зөрчилтэй", "value": total_d, "sub": f"{round(total_d/total_loans*100) if total_loans>0 else 0}%"},
-        {"label": "Нийт дүн", "value": f"{total_a:,.0f} ₮", "sub": "Хэтэрсэн өр"},
-        {"label": "Шүүх", "value": court, "sub": f"{court_pct}%"},
-    ]
-    months = ['1-р сар','2-р сар','3-р сар','4-р сар','5-р сар','6-р сар']
-    import random as _r; chart_values = [_r.randint(5,30) for _ in months]
-    os_rows = (
-        db.session.query(OutsourcingAssignment.company_name, func.count(OutsourcingAssignment.id), func.sum(OutsourcingAssignment.collected_amount))
-        .group_by(OutsourcingAssignment.company_name).all()
-    )
-    outsourcing_perf = [SimpleNamespace(company=n, total=c, collected=float(s or 0), commission=round(float(s or 0)*0.1)) for n,c,s in os_rows]
-    from app.models import Branch
-    br_rows = (
-        db.session.query(Branch.name, func.count(Loan.id))
-        .join(Loan, Loan.branch_id == Branch.id)
-        .filter(Loan.delinquency_days > 0)
-        .group_by(Branch.name).all()
-    )
-    branch_perf = [SimpleNamespace(branch=n, cases=c) for n,c in br_rows]
-    ctx = get_base_context()
-    ctx.update({
-        "kpis": kpis, "chart_months": months, "chart_values": chart_values,
-        "outsourcing_perf": outsourcing_perf, "branch_perf": branch_perf,
-        "total_cases": total_d, "total_amount": total_a,
-        "resolved": resolved, "court": court, "court_pct": court_pct,
-    })
-    return render_template("dashboard/mgmt.html", **ctx)
-

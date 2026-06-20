@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% macro kpi_row(kpis) %}
+<div class="kpi-row">
+{% for k in kpis %}
+    <div class="kpi-card">
+        <div class="kpi-label">{{ k.label }}</div>
+        <div class="kpi-value">{{ k.value }}</div>
+        {% if k.sub %}<div class="kpi-sub">{{ k.sub }}</div>{% endif %}
+    </div>
+{% endfor %}
+</div>
+{% endmacro %}
+
+{% macro status_badge(s) %}
+{% set labels = {'new':'Шинэ','contacted':'Холбогдсон','promise':'Амлалт авсан','no_answer':'Хариу өгөөгүй','transferred':'Шилжүүлсэн','legal':'Хууль зүй','court':'Шүүхэд','outsourced':'Outsourcing','resolved':'Шийдвэрлэсэн'} %}
+<span class="status s-{{ s }}">{{ labels.get(s, s) }}</span>
+{% endmacro %}
+
+{% macro risk_badge(risk) %}
+<span class="risk-badge {{ risk.css_class }}">
+    <span class="risk-score">{{ risk.score }}</span>
+    {{ risk.emoji }} {{ risk.label_mn }}
+</span>
+{% endmacro %}
+
+{% macro risk_legend() %}
+<div class="risk-legend">
+    <span style="font-weight:600">🎯 Эрсдэлийн түвшин:</span>
+    <span class="risk-legend-item"><span class="risk-dot critical"></span> 🔴 Маш өндөр (75+)</span>
+    <span class="risk-legend-item"><span class="risk-dot high"></span> 🟠 Өндөр (50-74)</span>
+    <span class="risk-legend-item"><span class="risk-dot medium"></span> 🟡 Дунд (25-49)</span>
+    <span class="risk-legend-item"><span class="risk-dot low"></span> 🟢 Бага (0-24)</span>
+</div>
+{% endmacro %}
+
+{{ risk_legend() }}
+{{ kpi_row(kpis) }}
+
+<div style="margin-bottom:16px;">
+    <button class="btn btn-primary" onclick="DeepWork.init()" style="background:#3B82F6;color:white;padding:12px 24px;border:none;border-radius:8px;font-size:16px;font-weight:700;cursor:pointer;">
+        🎯 Deep Work Mode — Залгаж эхлэх
+    </button>
+</div>
+
+<div class="card-panel">
+    <div class="card-header">
+        <h3>📋 Миний хэрэг — эрсдэлээр эрэмбэлсэн</h3>
+        <input class="search-box" placeholder="🔍 Хайх..." oninput="filterTable(this)">
+    </div>
+    <table>
+        <thead><tr>
+            <th>№</th><th>🎯 Эрсдэл</th><th>Зээлдэгч</th><th>Зээлийн дүн</th><th>Хэтэрсэн хоног</th><th>Үлдэгдэл</th><th>Төлөв</th><th>Шуурхай</th><th>Үйлдэл</t
+        </tr></thead>
+        <tbody>
+        {% for case, loan, borrower, risk in scored_cases %}
+        <tr data-case-id="{{ case.id }}">
+            <td>{{ ((pagination.page - 1) * pagination.per_page) + loop.index }}</td>
+            <td>{{ risk_badge(risk) }}</td>
+            <td><strong>{{ borrower.name }}</strong></td>
+            <td>{{ "{:,.0f}".format(loan.amount) }}₮</td>
+            <td>{{ case.days_overdue }}</td>
+            <td>{{ "{:,.0f}".format(loan.balance) }}₮</td>
+            <td>{{ status_badge(case.status) }}</td>
+            <td><div class="quick-actions"><button class="quick-btn quick-btn-call" onclick="quickAction({{ case.id }},'phone_call','callback')" title="Ярисан">📞</button><button class="quick-btn quick-btn-promise" onclick="quickAction({{ case.id }},'phone_call','promise_made')" title="Амлалт">✅</button><button class="quick-btn quick-btn-noanswer" onclick="quickAction({{ case.id }},'phone_call','no_answer')" title="Хариугүй">❌</button></div></td>
+            <td><button class="btn btn-primary btn-sm" onclick="openActionModal({{ case.id }}, '{{ borrower.name }}')">Үйлдэл</button></td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{# ─── PAGINATION COMPONENT ────────────────────────────────────────────── #}
+{# Paste this AFTER the closing </table> tag inside the card-panel.        #}
+{# Requires `pagination` dict in context.                                   #}
+
+{% macro pagination_controls(p, role) %}
+    <div class="pagination-wrap">
+        {# ── Top info row ── #}
+        <div class="pagination-info">
+            <span><strong>{{ p.start_row }}-{{ p.end_row }}</strong> / <strong>{{ p.total }}</strong> хэрэг</span>
+            <span class="pagination-page">Хуудас <strong>{{ p.page }}</strong> / {{ p.total_pages }}</span>
+        </div>
+
+        {# ── Page navigation ── #}
+        <div class="pagination-nav">
+            {# Previous button #}
+            {% if p.has_prev %}
+                <a href="?page={{ p.prev_page }}" class="pg-btn pg-prev">← Өмнөх</a>
+            {% else %}
+                <span class="pg-btn pg-prev pg-disabled">← Өмнөх</span>
+            {% endif %}
+
+            {# Page numbers — smart display #}
+            <div class="pg-pages">
+                {# Always show page 1 #}
+                {% if p.page > 3 %}
+                    <a href="?page=1" class="pg-num">1</a>
+                    {% if p.page > 4 %}
+                        <span class="pg-ellipsis">…</span>
+                    {% endif %}
+                {% endif %}
+
+                {# Current page ±2 #}
+                {% for n in range(p.page - 2, p.page + 3) %}
+                    {% if n >= 1 and n <= p.total_pages %}
+                        {% if n == p.page %}
+                            <span class="pg-num pg-active">{{ n }}</span>
+                        {% else %}
+                            <a href="?page={{ n }}" class="pg-num">{{ n }}</a>
+                        {% endif %}
+                    {% endif %}
+                {% endfor %}
+
+                {# Always show last page #}
+                {% if p.page < p.total_pages - 2 %}
+                    {% if p.page < p.total_pages - 3 %}
+                        <span class="pg-ellipsis">…</span>
+                    {% endif %}
+                    <a href="?page={{ p.total_pages }}" class="pg-num">{{ p.total_pages }}</a>
+                {% endif %}
+            </div>
+
+            {# Next button #}
+            {% if p.has_next %}
+                <a href="?page={{ p.next_page }}" class="pg-btn pg-next">Дараах →</a>
+            {% else %}
+                <span class="pg-btn pg-next pg-disabled">Дараах →</span>
+            {% endif %}
+        </div>
+
+        {# ── Jump-to-page input ── #}
+        <div class="pagination-jump">
+            <span>Хуудас руу үсрэх:</span>
+            <input type="number" id="pg-jump-input" min="1" max="{{ p.total_pages }}" value="{{ p.page }}" />
+            <button onclick="
+                var v = document.getElementById('pg-jump-input').value;
+                if (v >= 1 && v <= {{ p.total_pages }}) {
+                    window.location = '?page=' + v;
+                }
+            ">Очих</button>
+        </div>
+    </div>
+{% endmacro %}
+
+{# Call it: #}
+{{ pagination_controls(pagination, role) }}
+
+{% endblock %}
