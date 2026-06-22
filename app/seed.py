@@ -41,7 +41,7 @@ from app.models import (
     NotificationType, NotificationChannel, NotificationStatus, PermissionType,
     InsuranceDecision, RestructureDecision, EscalationFrequency,
     TransferStatus, OutsourcingStatus,
-    DepositAccountType,                                            # NEW
+    DepositAccountType,  GoalCategory, AnnualGoal,
 )
 
 
@@ -391,7 +391,72 @@ def seed_escalation_rules():
     print(f"  ✅ {len(rules)} escalation rules")
     return rules
 
+# ============================================================================
+# 🆕 GOAL CATEGORIES + ANNUAL GOALS (Phase E.1)
+# ============================================================================
 
+def seed_goal_categories():
+    """Create the 3 KPI categories for annual goal tracking."""
+    cats_data = [
+        ("savings_accounts", "Хадгаламжийн данс", "💰", "данс", 1),
+        ("credit_cards",     "Кредит карт",       "💳", "карт", 2),
+        ("new_loans",        "Шинэ зээл",         "📑", "зээл", 3),
+    ]
+    categories = []
+    for code, name_mn, icon, unit_mn, order in cats_data:
+        c = GoalCategory(
+            code=code,
+            name_mn=name_mn,
+            icon=icon,
+            unit_mn=unit_mn,
+            sort_order=order,
+            is_active=True,
+        )
+        categories.append(c)
+    db.session.add_all(categories)
+    db.session.flush()
+    print(f"  ✅ {len(categories)} goal categories")
+    return {c.code: c for c in categories}
+
+
+def seed_annual_goals(branches, categories, users):
+    """
+    Seed 2026 annual goals for all branches.
+    Targets are randomized within realistic ranges per category.
+    """
+    current_year = date.today().year
+
+    # Find a user to mark as "set_by" — prefer executive, fallback to first user
+    setter = next(
+        (u for u in users if u.role.code in ("executive", "regional_director")),
+        users[0] if users else None,
+    )
+
+    target_ranges = {
+        "savings_accounts": (800, 1500),
+        "credit_cards":     (300, 600),
+        "new_loans":        (150, 400),
+    }
+
+    goals = []
+    for branch in branches:
+        for code, cat in categories.items():
+            low, high = target_ranges[code]
+            target = random.randint(low, high)
+            g = AnnualGoal(
+                year=current_year,
+                branch_id=branch.id,
+                category_id=cat.id,
+                target_count=target,
+                set_by_user_id=setter.id if setter else None,
+                set_at=datetime.now(timezone.utc),
+                notes=None,
+            )
+            goals.append(g)
+    db.session.add_all(goals)
+    db.session.flush()
+    print(f"  ✅ {len(goals)} annual goals ({len(branches)} branches × {len(categories)} categories)")
+    return goals
 
 # ============================================================================
 # DATA POOLS
@@ -979,6 +1044,8 @@ def seed():
     products = seed_loan_products(segments)
     seed_source_systems()
     seed_escalation_rules()
+    categories = seed_goal_categories()
+    seed_annual_goals(branches, categories, users)
 
     print("\n📦 Core data...")
     borrowers, loans = seed_borrowers_and_loans(branches, products, users, segments)
@@ -1016,6 +1083,9 @@ def seed():
     print(f"   Transfers:       {CaseTransfer.query.count()}")
     print(f"   Outsourcing:     {OutsourcingAssignment.query.count()}")
     print(f"   Committee:       {CommitteeReview.query.count()}")
+    print(f"   Goal Categories: {GoalCategory.query.count()}")
+    print(f"   Annual Goals:    {AnnualGoal.query.count()}")
+
     print(f"   ─────────────────────────")
     total = sum([
         Segment.query.count(), Region.query.count(), Branch.query.count(),

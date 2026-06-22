@@ -441,6 +441,79 @@ class Permission(db.Model):
     def __repr__(self):
         return f"<Permission role={self.role_id} step={self.process_step_code}>"
 
+# ============================================================================
+# MODELS — Annual Goals (NEW for Phase E.1)
+# ============================================================================
+
+class GoalCategory(db.Model):
+    """
+    Зорилтын ангилал — KPI categories that can have annual goals.
+
+    Each category defines WHAT to track (savings accounts, credit cards, etc.).
+    Adding a new category = insert a row + add a counting function in
+    goal_tracking.py. No schema migration needed.
+    """
+    __tablename__ = "goal_categories"
+
+    id          = db.Column(db.Integer, primary_key=True)
+    code        = db.Column(db.String(50), unique=True, nullable=False)
+    name_mn     = db.Column(db.String(100), nullable=False)
+    icon        = db.Column(db.String(10), default="🎯")
+    unit_mn     = db.Column(db.String(20), default="ширхэг")
+    is_active   = db.Column(db.Boolean, default=True)
+    sort_order  = db.Column(db.Integer, default=0)
+    created_at  = db.Column(db.DateTime, default=_utcnow)
+
+    # Reverse relationship — all goals using this category
+    goals = db.relationship("AnnualGoal", back_populates="category")
+
+    def __repr__(self):
+        return f"<GoalCategory {self.code}>"
+
+
+class AnnualGoal(db.Model):
+    """
+    Жилийн зорилт — Annual KPI target for a (year, branch, category).
+
+    Set by regional directors (or executives override).
+    Branch directors see them but can't edit them in Phase E.
+    Worker-level goals deferred to Phase E.4.
+    """
+    __tablename__ = "annual_goals"
+
+    id              = db.Column(db.Integer, primary_key=True)
+    year            = db.Column(db.Integer, nullable=False, index=True)
+    branch_id       = db.Column(db.Integer, db.ForeignKey("branches.id"), nullable=False)
+    category_id     = db.Column(db.Integer, db.ForeignKey("goal_categories.id"), nullable=False)
+
+    target_count    = db.Column(db.Integer, nullable=False, default=0)
+    set_by_user_id  = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
+    set_at          = db.Column(db.DateTime, default=_utcnow)
+    notes           = db.Column(db.Text, nullable=True)
+
+    updated_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
+    deleted_at         = db.Column(db.DateTime, nullable=True, index=True)
+    deleted_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
+
+    created_at      = db.Column(db.DateTime, default=_utcnow)
+    updated_at      = db.Column(db.DateTime, default=_utcnow, onupdate=_utcnow)
+
+    # Relationships
+    branch    = db.relationship("Branch")
+    category  = db.relationship("GoalCategory", back_populates="goals")
+    set_by    = db.relationship("User", foreign_keys=[set_by_user_id])
+
+    updated_by = db.relationship("User", foreign_keys=[updated_by_user_id])      # 🆕
+    deleted_by = db.relationship("User", foreign_keys=[deleted_by_user_id])      # 🆕
+
+    # One goal per (year, branch, category)
+    __table_args__ = (
+        db.UniqueConstraint("year", "branch_id", "category_id",
+                            name="uq_annual_goal_per_branch"),
+    )
+
+    def __repr__(self):
+        return f"<AnnualGoal {self.year} branch={self.branch_id} cat={self.category_id}>"
 
 class LoanProduct(db.Model):
     """Бүтээгдэхүүний төрөл"""

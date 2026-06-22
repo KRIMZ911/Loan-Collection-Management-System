@@ -76,7 +76,7 @@ SEG_SMB    = "SMB"
 # Dashboard types — the 4 universal dashboards
 DASH_BANK     = "bank"
 DASH_REGIONAL = "regional"
-DASH_BRANCHES = "branches"
+DASH_BRANCH = "branch"
 DASH_LOANS    = "loans"
 
 
@@ -98,14 +98,14 @@ DASHBOARD_CATALOG: Dict[str, Dict[str, str]] = {
         "label_mn": "Бүсийн самбар",
         "label_en": "Regional Dashboard",
         "color":    "#0D9488",
-        "sub_mn":   "Бүсийн доторх салбарын мэдээлэл",
+        "sub_mn":   "Бүсийн доторх салбаруудын харьцуулалт",
     },
-    DASH_BRANCHES: {
+    DASH_BRANCH: {
         "icon":     "🏢",
         "label_mn": "Салбарын самбар",
-        "label_en": "Branches Dashboard",
+        "label_en": "Branch Dashboard",
         "color":    "#16A34A",
-        "sub_mn":   "Салбар тус бүрийн гүйцэтгэл",
+        "sub_mn":   "Зорилт, ажилтан, гүйцэтгэл",
     },
     DASH_LOANS: {
         "icon":     "📋",
@@ -150,7 +150,7 @@ def _branch_worker(segment: Optional[str] = None) -> Dict[str, Any]:
 def _branch_manager() -> Dict[str, Any]:
     """Default profile: branch-level manager. Two dashboards: branches + loans."""
     return {
-        "dashboards":                  [DASH_BRANCHES, DASH_LOANS],
+        "dashboards":                  [DASH_BRANCH, DASH_LOANS],
         "geo_scope":                   GEO_OWN_BRANCH,
         "segment_filter":              None,
         "hide_personal":               False,
@@ -196,11 +196,12 @@ ROLE_ACCESS: Dict[str, Dict[str, Any]] = {
         **_branch_manager(),
         "can_assign_cases":  True,
         "can_export":        True,
+        "can_set_worker_goals": True,
     },
 
     # ─── REGIONAL DIRECTOR — three dashboards, own region ─────────────────
     "regional_director": {
-        "dashboards":                  [DASH_REGIONAL, DASH_BRANCHES, DASH_LOANS],
+        "dashboards":                  [DASH_REGIONAL, DASH_BRANCH, DASH_LOANS],
         "geo_scope":                   GEO_OWN_REGION,
         "segment_filter":              None,
         "hide_personal":               False,
@@ -208,6 +209,7 @@ ROLE_ACCESS: Dict[str, Dict[str, Any]] = {
         "can_see_employee_performance": True,
         "can_assign_cases":            True,
         "can_export":                  True,
+        "can_set_branch_goals":       True,
     },
 
     # ─── HQ PROCESS CONTROL (БПҮХ) — retail loans, bank-wide ──────────────
@@ -243,7 +245,7 @@ ROLE_ACCESS: Dict[str, Dict[str, Any]] = {
 
     # Risk dept director — gets branches dashboard too for oversight
     "risk_dept_director": {
-        "dashboards":                  [DASH_BRANCHES, DASH_LOANS],
+        "dashboards":                  [DASH_BRANCH, DASH_LOANS],
         "geo_scope":                   GEO_BANK_WIDE,
         "segment_filter":              None,
         "hide_personal":               False,
@@ -269,7 +271,7 @@ ROLE_ACCESS: Dict[str, Dict[str, Any]] = {
 
     # ─── EXECUTIVE (Удирдлага) — all four dashboards, full visibility ─────
     "executive": {
-        "dashboards":                  [DASH_BANK, DASH_REGIONAL, DASH_BRANCHES, DASH_LOANS],
+        "dashboards":                  [DASH_BANK, DASH_REGIONAL, DASH_BRANCH, DASH_LOANS],
         "geo_scope":                   GEO_BANK_WIDE,
         "segment_filter":              None,
         "hide_personal":               False,
@@ -277,6 +279,9 @@ ROLE_ACCESS: Dict[str, Dict[str, Any]] = {
         "can_see_employee_performance": True,
         "can_assign_cases":            False,
         "can_export":                  True,
+        "can_set_branch_goals":        True,     # ← NEW
+        "can_set_worker_goals":        True,     # ← NEW
+
     },
 }
 
@@ -291,6 +296,9 @@ _NO_ACCESS: Dict[str, Any] = {
     "can_see_employee_performance": False,
     "can_assign_cases":            False,
     "can_export":                  False,
+    "can_set_branch_goals":        False,    # ← NEW
+    "can_set_worker_goals":        False,    # ← NEW
+
 }
 
 
@@ -370,6 +378,67 @@ def get_default_dashboard(user: User) -> Optional[str]:
 def has_multiple_dashboards(user: User) -> bool:
     """True if user should see the menu instead of skipping to a dashboard."""
     return len(get_dashboards(user)) > 1
+
+
+def get_scope_label(user: User) -> Dict[str, str]:
+    """
+    Return a human-readable label describing what the user can see.
+    Used in the dashboard header badge.
+
+    Returns dict with:
+        icon  — emoji for the scope
+        text  — short label ("Баянзүрх салбар", "Төв бүс", etc.)
+        sub   — extra context ("5 салбар", "Retail зээл", etc.)
+    """
+    if user is None:
+        return {"icon": "🔒", "text": "Эрх байхгүй", "sub": ""}
+
+    policy = get_policy(user)
+    geo = policy["geo_scope"]
+    segment = policy["segment_filter"]
+
+    # Geographic label
+    if geo == GEO_OWN_BRANCH:
+        text = user.branch.name if user.branch else "Тодорхойгүй салбар"
+        icon = "🏢"
+    elif geo == GEO_OWN_REGION:
+        if user.region_id:
+            from app.models import Region
+            region = Region.query.get(user.region_id)
+            branches_count = Branch.query.filter_by(region_id=user.region_id).count()
+            text = region.name if region else "Тодорхойгүй бүс"
+            icon = "🌍"
+        else:
+            text, icon = "Бүсгүй", "🌍"
+            branches_count = 0
+    elif geo == GEO_BANK_WIDE:
+        text = "Бүх банк"
+        icon = "🏦"
+        branches_count = Branch.query.count()
+    elif geo == GEO_OWN_ASSIGNMENTS:
+        text = "Миний хариуцсан хэрэг"
+        icon = "🔒"
+        branches_count = 0
+    else:
+        return {"icon": "🔒", "text": "Эрх байхгүй", "sub": ""}
+
+    # Sub text (segment / branch count)
+    sub_parts = []
+    if geo == GEO_OWN_REGION and branches_count:
+        sub_parts.append(f"{branches_count} салбар")
+    elif geo == GEO_BANK_WIDE and branches_count:
+        sub_parts.append(f"{branches_count} салбар")
+
+    if segment == SEG_RETAIL:
+        sub_parts.append("Иргэдийн зээл")
+    elif segment == SEG_SMB:
+        sub_parts.append("ЖДББ зээл")
+
+    return {
+        "icon": icon,
+        "text": text,
+        "sub": " • ".join(sub_parts),
+    }
 
 
 def can_access_dashboard(user: User, dashboard_type: str) -> bool:
@@ -553,6 +622,33 @@ def require_dashboard(dashboard_type: str):
             if user is None:
                 return redirect(url_for("auth.index"))
             if not can_access_dashboard(user, dashboard_type):
+                abort(403)
+            return view_fn(*args, **kwargs)
+        return wrapper
+    return decorator
+
+def require_capability(capability_key: str):
+    """
+    Block users whose policy doesn't grant this capability flag.
+    Used for admin actions like setting goals, exporting data, etc.
+
+    Usage:
+        @require_capability("can_set_branch_goals")
+        def view():
+            ...
+
+    Behavior:
+        - Not logged in → redirect to login page
+        - Logged in but no capability → 403 Forbidden
+        - Logged in with capability → view runs normally
+    """
+    def decorator(view_fn):
+        @wraps(view_fn)
+        def wrapper(*args, **kwargs):
+            user = current_user()
+            if user is None:
+                return redirect(url_for("auth.index"))
+            if not can(user, capability_key):
                 abort(403)
             return view_fn(*args, **kwargs)
         return wrapper

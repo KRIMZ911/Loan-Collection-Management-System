@@ -39,6 +39,7 @@ from app.services.access_control import (
     require_login,
     require_dashboard,
     DASHBOARD_CATALOG,
+    get_scope_label,
 )
 
 dashboard_bp = Blueprint("dashboard", __name__)
@@ -215,10 +216,10 @@ def dashboard(dashboard_type):
         abort(403)
 
     builders = {
-        "bank":     _build_bank,
-        "regional": _build_regional,
-        "branches": _build_branches,
-        "loans":    _build_loans,
+    "bank":     _build_bank,
+    "regional": _build_regional,
+    "branch":   _build_branch,         # ← renamed key
+    "loans":    _build_loans,
     }
     builder = builders.get(dashboard_type)
     if builder is None:
@@ -266,37 +267,65 @@ def case_detail(loan_id):
 
 def _build_loans():
     """
-    Loans dashboard — works for everyone.
-    Scope is automatic via scope_loans():
-        - Branch worker:     own branch only
-        - Branch manager:    own branch only
-        - Regional director: all branches in their region
-        - Executive / БПҮХ:  bank-wide (with policy-defined segment filter)
-        - Outsourcing:       only their assigned cases (PII masked)
+    Loans dashboard — universal, scope-aware, with smart search + filters.
     """
     user = current_user()
     page = request.args.get("page", 1, type=int)
 
-    # 🎯 One line replaces all the manual filtering
-    q = scope_loans(Loan.query, user).filter(Loan.delinquency_days > 0)
-    total = q.count()
-    loans = (q.order_by(Loan.delinquency_days.desc())
-              .offset((page - 1) * PER_PAGE)
-              .limit(PER_PAGE).all())
+    # 🎯 Step 1: Scope (security) — what data can this user see at all
+    base_q = scope_loans(Loan.query, user)
+
+    # 🎯 Step 2: Apply user's search + filters from URL params
+    from app.services.loan_search import (
+        apply_search_and_filters,
+        build_filter_chips,
+        get_filter_options,
+    )
+    filtered_q, parsed_search = apply_search_and_filters(base_q, request.args)
+
+    # Default behavior: show only delinquent if no specific filter narrows it
+    if not request.args.get("days_min") and not request.args.get("status"):
+        filtered_q = filtered_q.filter(Loan.delinquency_days > 0)
+
+    # 🎯 Step 3: Paginate
+    total = filtered_q.count()
+    loans = (filtered_q.order_by(Loan.delinquency_days.desc())
+                       .offset((page - 1) * PER_PAGE)
+                       .limit(PER_PAGE).all())
 
     rows = [(l, l.borrower) for l in loans]
     scored = score_cases(rows)
     cases = _pack_scored(scored)
 
+    # 🎯 Step 4: Get dropdown options + active chips for the UI
+    filter_opts = get_filter_options(user)
+    chips = build_filter_chips(
+        request.args.to_dict(),
+        parsed_search,
+        filter_opts["branches_dict"],
+        filter_opts["products_dict"],
+    )
+
+    # 🎯 Step 5: Build full context
     ctx = get_base_context(active_dashboard="loans")
     ctx.update({
-        "cases":      cases,
-        "kpis":       _build_kpis(scored),
-        "pagination": _build_pagination(page, total),
-        "hide_pii":   mask_personal_info(user),
+        # data
+        "cases":            cases,
+        "kpis":             _build_kpis(scored),
+        "pagination":       _build_pagination(page, total),
+        "hide_pii":         mask_personal_info(user),
+        # chrome
+        "dashboard_meta":   DASHBOARD_CATALOG.get("loans", {}),
+        "scope_label":      get_scope_label(user),
+        "show_back_button": len(get_dashboards(user)) > 1,
+        "total_results":    total,
+        # search + filters
+        "parsed_search":    parsed_search,
+        "filter_chips":     chips,
+        "filter_opts":      filter_opts,
+        "request_args":     request.args.to_dict(),
     })
     return render_template("dashboard/loans.html", **ctx)
-
 
 # ─── STUBS — Phases C, D, E will fill these in ─────────────────────────────
 
@@ -329,33 +358,121 @@ _STUB_TEMPLATE = """
 """
 
 
-def _build_branches():
-    """Stub — Phase D will build this."""
-    user = current_user()
-    back = url_for("dashboard.menu") if len(get_dashboards(user)) > 1 \
-           else url_for("auth.logout")
-    return render_template_string(
-        _STUB_TEMPLATE,
-        icon="🏢",
-        title="Салбарын самбар",
-        message="Энэ дашбоард удахгүй нэмэгдэнэ. (Phase D)",
-        back_url=back,
+@require_dashboard("regional")        # ← changed from "branches"
+def _build_regional():                # ← renamed from _
+
+    """
+    Branches dashboard — sortable comparison table + attention widgets.
+    All data comes through scope-aware widget functions in branch_stats.
+    """
+    from app.services.branch_stats import (
+        widget_branches_kpi_summary,
+        widget_branches_comparison_table,
+        widget_top_risk_branches,
+        get_all_attention_signals,
     )
 
-
-def _build_regional():
-    """Stub — Phase E will build this."""
     user = current_user()
-    back = url_for("dashboard.menu") if len(get_dashboards(user)) > 1 \
-           else url_for("auth.logout")
-    return render_template_string(
-        _STUB_TEMPLATE,
-        icon="🌍",
-        title="Бүсийн самбар",
-        message="Энэ дашбоард удахгүй нэмэгдэнэ. (Phase E)",
-        back_url=back,
-    )
 
+    # Sort params from URL (?sort=amount&dir=desc)
+    sort_by  = request.args.get("sort", "amount")
+    sort_dir = request.args.get("dir",  "desc")
+
+    # Pull data from all widgets
+    kpis            = widget_branches_kpi_summary(user)
+    branch_rows     = widget_branches_comparison_table(user, sort_by, sort_dir)
+    top_risk        = widget_top_risk_branches(user, limit=5)
+    attention       = get_all_attention_signals(user)
+
+    ctx = get_base_context(active_dashboard="regional")
+    ctx.update({
+        # chrome
+        "dashboard_meta":   DASHBOARD_CATALOG.get("regional", {}),
+        "scope_label":      get_scope_label(user),
+        "show_back_button": len(get_dashboards(user)) > 1,
+        # data
+        "kpis":             kpis,
+        "branch_rows":      branch_rows,
+        "top_risk":         top_risk,
+        "attention":        attention,
+        # state
+        "sort_by":          sort_by,
+        "sort_dir":         sort_dir,
+    })
+    return render_template("dashboard/regional.html", **ctx)
+
+@require_dashboard("branch")
+def _build_branch():
+    """
+    Branch dashboard — single-branch detail view.
+
+    Scope rules:
+      - Branch worker/manager: auto-uses their own branch (user.branch_id)
+      - Regional director/executive: picks via ?branch_id=N param
+      - If no branch_id and user has no own branch → branch picker
+    """
+    from app.services.branch_stats import (
+        widget_branch_summary_kpis,
+        widget_branch_goals_progress,
+        widget_branch_worker_performance,
+        widget_branch_recent_activity,
+        _verify_branch_access,
+    )
+    from app.services.access_control import scope_branches, can
+
+    user = current_user()
+
+    # Determine which branch to show
+    branch_id = request.args.get("branch_id", type=int)
+    if branch_id is None:
+        # Default to user's own branch
+        branch_id = user.branch_id
+
+    # If still no branch (e.g. regional director hasn't picked one) — show picker
+    if branch_id is None:
+        visible_branches = scope_branches(Branch.query, user).order_by(Branch.name).all()
+        ctx = get_base_context(active_dashboard="branch")
+        ctx.update({
+            "dashboard_meta":   DASHBOARD_CATALOG.get("branch", {}),
+            "scope_label":      get_scope_label(user),
+            "show_back_button": len(get_dashboards(user)) > 1,
+            "show_picker":      True,
+            "visible_branches": visible_branches,
+        })
+        return render_template("dashboard/branch.html", **ctx)
+
+    # Try to access the branch — 403 if not allowed
+    try:
+        _verify_branch_access(user, branch_id)
+    except ValueError:
+        abort(403)
+
+    # Pull data from all widgets
+    summary    = widget_branch_summary_kpis(user, branch_id)
+    goals      = widget_branch_goals_progress(user, branch_id)
+    workers    = widget_branch_worker_performance(user, branch_id)
+    activity   = widget_branch_recent_activity(user, branch_id, limit=10)
+
+    # For "Зорилт засах" button — regional+executive can edit branch goals
+    can_edit_goals = can(user, "can_set_branch_goals")
+
+    ctx = get_base_context(active_dashboard="branch")
+    ctx.update({
+        "dashboard_meta":   DASHBOARD_CATALOG.get("branch", {}),
+        "scope_label":      get_scope_label(user),
+        "show_back_button": len(get_dashboards(user)) > 1,
+        "show_picker":      False,
+        # data
+        "summary":          summary,
+        "goals":            goals,
+        "workers":          workers,
+        "activity":         activity,
+        "can_edit_goals":   can_edit_goals,
+        # for picker (regional/exec can switch branches)
+        "visible_branches": scope_branches(Branch.query, user).order_by(Branch.name).all(),
+        "current_branch_id": branch_id,
+    })
+    return render_template("dashboard/branch.html", **ctx)
 
 def _build_bank():
     """Stub — Phase F (optional) will build this."""

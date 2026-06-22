@@ -1,28 +1,37 @@
 {% extends "base.html" %}
 {% block content %}
 
+{# ════════════════════════════════════════════════════════════════════ #}
+{# MACROS                                                              #}
+{# ════════════════════════════════════════════════════════════════════ #}
+
 {% macro kpi_row(kpis) %}
 <div class="kpi-row">
-{% for k in kpis %}
-    <div class="kpi-card">
-        <div class="kpi-label">{{ k.label }}</div>
-        <div class="kpi-value">{{ k.value }}</div>
-        {% if k.sub %}<div class="kpi-sub">{{ k.sub }}</div>{% endif %}
-    </div>
-{% endfor %}
+    {% for k in kpis %}
+        <div class="kpi-card">
+            <div class="kpi-label">{{ k.label }}</div>
+            <div class="kpi-value">{{ k.value }}</div>
+            {% if k.sub %}<div class="kpi-sub">{{ k.sub }}</div>{% endif %}
+        </div>
+    {% endfor %}
 </div>
 {% endmacro %}
 
 {% macro status_badge(s) %}
-{% set labels = {'new':'Шинэ','contacted':'Холбогдсон','promise':'Амлалт авсан','no_answer':'Хариу өгөөгүй','transferred':'Шилжүүлсэн','legal':'Хууль зүй','court':'Шүүхэд','outsourced':'Outsourcing','resolved':'Шийдвэрлэсэн'} %}
-<span class="status s-{{ s }}">{{ labels.get(s, s) }}</span>
+    {% set labels = {
+        'new': 'Шинэ', 'contacted': 'Холбогдсон', 'promise': 'Амлалт авсан',
+        'no_answer': 'Хариу өгөөгүй', 'transferred': 'Шилжүүлсэн',
+        'legal': 'Хууль зүй', 'court': 'Шүүхэд', 'outsourced': 'Аутсорсинг',
+        'resolved': 'Шийдвэрлэсэн', 'active': 'Идэвхтэй', 'delinquent': 'Зөрчилтэй'
+    } %}
+    <span class="status s-{{ s }}">{{ labels.get(s, s) }}</span>
 {% endmacro %}
 
 {% macro risk_badge(risk) %}
-<span class="risk-badge {{ risk.css_class }}">
-    <span class="risk-score">{{ risk.score }}</span>
-    {{ risk.emoji }} {{ risk.label_mn }}
-</span>
+    <span class="risk-badge {{ risk.css_class }}">
+        <span class="risk-score">{{ risk.score }}</span>
+        {{ risk.emoji }} {{ risk.label_mn }}
+    </span>
 {% endmacro %}
 
 {% macro risk_legend() %}
@@ -35,74 +44,434 @@
 </div>
 {% endmacro %}
 
+{# ════════════════════════════════════════════════════════════════════ #}
+{# PAGE STYLES                                                          #}
+{# ════════════════════════════════════════════════════════════════════ #}
+
+<style>
+    /* ─── Header (from C.1) ─── */
+    .loans-header {
+        display: flex; justify-content: space-between; align-items: center;
+        gap: 16px; padding: 20px 24px; background: white;
+        border-radius: 12px; margin-bottom: 16px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .loans-header-left { display: flex; align-items: center; gap: 16px; flex: 1; min-width: 0; }
+    .loans-title-icon { font-size: 32px; line-height: 1; }
+    .loans-title-text h1 { margin: 0; font-size: 22px; font-weight: 700; color: #0F172A; }
+    .loans-title-text .subtitle { font-size: 13px; color: #64748B; margin-top: 2px; }
+    .scope-badge {
+        display: inline-flex; align-items: center; gap: 8px;
+        padding: 8px 14px; background: #F1F5F9; border: 1px solid #E2E8F0;
+        border-radius: 999px; font-size: 13px; color: #334155;
+    }
+    .scope-badge .scope-text { font-weight: 600; color: #0F172A; }
+    .scope-badge .scope-sub { color: #64748B; padding-left: 8px;
+        border-left: 1px solid #CBD5E1; margin-left: 4px; }
+    .back-to-menu {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 8px 14px; background: white; border: 1px solid #E2E8F0;
+        border-radius: 8px; color: #475569; text-decoration: none;
+        font-size: 13px; font-weight: 500; transition: all 0.15s;
+    }
+    .back-to-menu:hover { background: #F8FAFC; border-color: #CBD5E1; color: #0F172A; }
+
+    /* ─── Search + Filter panel ─── */
+    .search-panel {
+        background: white; border-radius: 12px; padding: 20px;
+        margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .search-row {
+        display: flex; gap: 10px; align-items: center; margin-bottom: 14px;
+    }
+    .search-input {
+        flex: 1; padding: 12px 16px; font-size: 15px;
+        border: 2px solid #E2E8F0; border-radius: 10px;
+        transition: border-color 0.15s;
+    }
+    .search-input:focus { outline: none; border-color: #2563EB; }
+    .search-btn {
+        padding: 12px 24px; background: #2563EB; color: white;
+        border: none; border-radius: 10px; font-size: 14px; font-weight: 600;
+        cursor: pointer; transition: background 0.15s;
+    }
+    .search-btn:hover { background: #1D4ED8; }
+    .clear-btn {
+        padding: 12px 18px; background: white; color: #64748B;
+        border: 1px solid #E2E8F0; border-radius: 10px;
+        font-size: 13px; text-decoration: none; transition: all 0.15s;
+    }
+    .clear-btn:hover { background: #F8FAFC; color: #0F172A; }
+
+    .search-hint {
+        font-size: 12px; color: #2563EB; margin: -8px 0 14px 4px;
+        font-weight: 500;
+    }
+
+    .filter-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 10px; margin-bottom: 12px;
+    }
+    .filter-group { display: flex; flex-direction: column; gap: 4px; }
+    .filter-group label {
+        font-size: 11px; color: #64748B; font-weight: 600;
+        text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    .filter-group select,
+    .filter-group input {
+        padding: 8px 10px; font-size: 13px;
+        border: 1px solid #E2E8F0; border-radius: 8px;
+        background: white;
+    }
+    .filter-group select:focus,
+    .filter-group input:focus { outline: none; border-color: #2563EB; }
+
+    .range-inputs { display: flex; gap: 6px; align-items: center; }
+    .range-inputs input { flex: 1; min-width: 0; }
+    .range-inputs .range-sep { color: #94A3B8; font-size: 12px; }
+
+    .date-row {
+        display: grid; grid-template-columns: 1fr 1fr 1fr;
+        gap: 10px; margin-bottom: 12px;
+    }
+
+    /* ─── Active filter chips ─── */
+    .chips-row {
+        display: flex; flex-wrap: wrap; gap: 8px;
+        padding: 12px 16px; background: #F8FAFC;
+        border: 1px solid #E2E8F0; border-radius: 10px;
+        margin-bottom: 16px; align-items: center;
+    }
+    .chips-row-label {
+        font-size: 12px; color: #64748B; font-weight: 600;
+        margin-right: 4px;
+    }
+    .chip {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 5px 10px; background: white;
+        border: 1px solid #CBD5E1; border-radius: 999px;
+        font-size: 12px; color: #334155;
+        transition: all 0.15s;
+    }
+    .chip:hover { border-color: #EF4444; }
+    .chip-remove {
+        color: #94A3B8; text-decoration: none; font-weight: 700;
+        font-size: 14px; line-height: 1;
+    }
+    .chip-remove:hover { color: #EF4444; }
+    .clear-all {
+        margin-left: auto; font-size: 12px; color: #EF4444;
+        text-decoration: none; font-weight: 500;
+    }
+    .clear-all:hover { text-decoration: underline; }
+
+    /* ─── Results summary (from C.1) ─── */
+    .results-summary {
+        padding: 12px 20px; background: #FAFBFC; border-radius: 8px;
+        font-size: 13px; color: #64748B; margin-bottom: 16px;
+    }
+    .results-summary strong { color: #0F172A; font-size: 14px; }
+</style>
+
+{# ════════════════════════════════════════════════════════════════════ #}
+{# 1) HEADER                                                            #}
+{# ════════════════════════════════════════════════════════════════════ #}
+
+<div class="loans-header">
+    <div class="loans-header-left">
+        <span class="loans-title-icon">{{ dashboard_meta.icon or "📋" }}</span>
+        <div class="loans-title-text">
+            <h1>{{ dashboard_meta.label_mn or "Зээлийн жагсаалт" }}</h1>
+            <div class="subtitle">{{ dashboard_meta.sub_mn or "" }}</div>
+        </div>
+        <div class="scope-badge">
+            <span class="scope-icon">{{ scope_label.icon }}</span>
+            <span class="scope-text">{{ scope_label.text }}</span>
+            {% if scope_label.sub %}<span class="scope-sub">{{ scope_label.sub }}</span>{% endif %}
+        </div>
+    </div>
+    {% if show_back_button %}
+        <a href="{{ url_for('dashboard.menu') }}" class="back-to-menu">← Цэс рүү</a>
+    {% endif %}
+</div>
+
+{# ════════════════════════════════════════════════════════════════════ #}
+{# 2) SEARCH + FILTER PANEL                                             #}
+{# ════════════════════════════════════════════════════════════════════ #}
+
+{# Map of detected search types to Mongolian labels #}
+{% set search_type_hints = {
+    "loan_number":         "🔍 Зээлийн дугаараар хайж байна",
+    "cif":                 "🔍 CIF дугаараар хайж байна",
+    "deposit_account":     "🔍 Дансны дугаараар хайж байна",
+    "off_balance_account": "🔍 Балансын гадуурх дансаар хайж байна",
+    "register":            "🔍 Регистрийн дугаараар хайж байна",
+    "phone":               "🔍 Утасны дугаараар хайж байна",
+    "email":               "🔍 Имэйл хаягаар хайж байна",
+    "name":                "🔍 Нэрээр хайж байна"
+} %}
+
+<form method="GET" action="" class="search-panel">
+
+    {# Smart search row #}
+    <div class="search-row">
+        <input type="text" name="q" class="search-input"
+               value="{{ request_args.q or '' }}"
+               placeholder="🔍 Бат, LN00457, 99119911, CIF00123, АА12345678, bat@bank.mn..."
+               autocomplete="off">
+        <button type="submit" class="search-btn">Хайх</button>
+        <a href="{{ url_for('dashboard.dashboard', dashboard_type='loans') }}" class="clear-btn">
+            ✕ Цэвэрлэх
+        </a>
+    </div>
+
+    {# Search type hint #}
+    {% if parsed_search and parsed_search.type != "empty" %}
+        <div class="search-hint">
+            {{ search_type_hints.get(parsed_search.type, "") }}
+        </div>
+    {% endif %}
+
+    {# Dropdown filters #}
+    <div class="filter-grid">
+
+        {% if filter_opts.show_branch_filter %}
+        <div class="filter-group">
+            <label>Салбар</label>
+            <select name="branch_id">
+                <option value="">— Бүгд —</option>
+                {% for b in filter_opts.branches %}
+                    <option value="{{ b.id }}"
+                            {% if request_args.branch_id == b.id|string %}selected{% endif %}>
+                        {{ b.name }}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+        {% endif %}
+
+        {% if filter_opts.show_segment_filter %}
+        <div class="filter-group">
+            <label>Сегмент</label>
+            <select name="segment">
+                <option value="">— Бүгд —</option>
+                <option value="RETAIL" {% if request_args.segment == "RETAIL" %}selected{% endif %}>Иргэдийн</option>
+                <option value="SMB"    {% if request_args.segment == "SMB"    %}selected{% endif %}>ЖДББ</option>
+            </select>
+        </div>
+        {% endif %}
+
+        <div class="filter-group">
+            <label>Төлөв</label>
+            <select name="status">
+                <option value="">— Бүгд —</option>
+                {% for s in filter_opts.statuses %}
+                    <option value="{{ s.value }}"
+                            {% if request_args.status == s.value %}selected{% endif %}>
+                        {{ s.label }}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="filter-group">
+            <label>Ангилал</label>
+            <select name="classification">
+                <option value="">— Бүгд —</option>
+                {% for c in filter_opts.classifications %}
+                    <option value="{{ c.value }}"
+                            {% if request_args.classification == c.value %}selected{% endif %}>
+                        {{ c.label }}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="filter-group">
+            <label>Бүтээгдэхүүн</label>
+            <select name="product_id">
+                <option value="">— Бүгд —</option>
+                {% for p in filter_opts.products %}
+                    <option value="{{ p.id }}"
+                            {% if request_args.product_id == p.id|string %}selected{% endif %}>
+                        {{ p.name }}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="filter-group">
+            <label>Хэтэрсэн хоног</label>
+            <div class="range-inputs">
+                <input type="number" name="days_min" min="0"
+                       value="{{ request_args.days_min or '' }}" placeholder="0">
+                <span class="range-sep">—</span>
+                <input type="number" name="days_max" min="0"
+                       value="{{ request_args.days_max or '' }}" placeholder="999">
+            </div>
+        </div>
+
+        <div class="filter-group">
+            <label>Хэтэрсэн дүн (₮)</label>
+            <div class="range-inputs">
+                <input type="number" name="amount_min" min="0" step="1000"
+                       value="{{ request_args.amount_min or '' }}" placeholder="0">
+                <span class="range-sep">—</span>
+                <input type="number" name="amount_max" min="0" step="1000"
+                       value="{{ request_args.amount_max or '' }}" placeholder="∞">
+            </div>
+        </div>
+
+    </div>
+
+    {# Date range row #}
+    <div class="date-row">
+        <div class="filter-group">
+            <label>Огнооны төрөл</label>
+            <select name="date_field">
+                {% for f in filter_opts.date_fields %}
+                    <option value="{{ f.value }}"
+                            {% if (request_args.date_field or "delinquency") == f.value %}selected{% endif %}>
+                        {{ f.label }}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="filter-group">
+            <label>Эхлэх</label>
+            <input type="date" name="date_from" value="{{ request_args.date_from or '' }}">
+        </div>
+        <div class="filter-group">
+            <label>Дуусах</label>
+            <input type="date" name="date_to" value="{{ request_args.date_to or '' }}">
+        </div>
+    </div>
+
+    <div style="text-align: right; margin-top: 8px;">
+        <button type="submit" class="search-btn">🔍 Шүүлтүүр хэрэглэх</button>
+    </div>
+</form>
+
+{# Active chips row #}
+{% if filter_chips %}
+<div class="chips-row">
+    <span class="chips-row-label">Идэвхтэй шүүлтүүр:</span>
+    {% for chip in filter_chips %}
+        <span class="chip">
+            {{ chip.label }}
+            <a href="{{ chip.remove_url }}" class="chip-remove" title="Хасах">✕</a>
+        </span>
+    {% endfor %}
+    <a href="{{ url_for('dashboard.dashboard', dashboard_type='loans') }}" class="clear-all">
+        Бүгдийг цэвэрлэх
+    </a>
+</div>
+{% endif %}
+
+{# ════════════════════════════════════════════════════════════════════ #}
+{# 3) RESULTS SUMMARY                                                   #}
+{# ════════════════════════════════════════════════════════════════════ #}
+
+<div class="results-summary">
+    Нийт <strong>{{ total_results }}</strong> зээл олдлоо
+    {% if pagination.total_pages > 1 %}
+        — <strong>{{ pagination.start_row }}-{{ pagination.end_row }}</strong> харуулж байна
+    {% endif %}
+</div>
+
+{# ════════════════════════════════════════════════════════════════════ #}
+{# 4) RISK LEGEND + KPIs                                                #}
+{# ════════════════════════════════════════════════════════════════════ #}
+
 {{ risk_legend() }}
 {{ kpi_row(kpis) }}
 
-<div style="margin-bottom:16px;">
-    <button class="btn btn-primary" onclick="DeepWork.init()" style="background:#3B82F6;color:white;padding:12px 24px;border:none;border-radius:8px;font-size:16px;font-weight:700;cursor:pointer;">
-        🎯 Deep Work Mode — Залгаж эхлэх
-    </button>
-</div>
+{# ════════════════════════════════════════════════════════════════════ #}
+{# 5) MAIN TABLE                                                        #}
+{# ════════════════════════════════════════════════════════════════════ #}
 
 <div class="card-panel">
     <div class="card-header">
-        <h3>📋 Миний хэрэг — эрсдэлээр эрэмбэлсэн</h3>
-        <input class="search-box" placeholder="🔍 Хайх..." oninput="filterTable(this)">
+        <h3>📋 Зээлийн хэрэг — эрсдэлээр эрэмбэлсэн</h3>
     </div>
+
+    {% if cases %}
     <table>
-        <thead><tr>
-            <th>№</th><th>🎯 Эрсдэл</th><th>Зээлдэгч</th><th>Зээлийн дүн</th><th>Хэтэрсэн хоног</th><th>Үлдэгдэл</th><th>Төлөв</th><th>Шуурхай</th><th>Үйлдэл</t
-        </tr></thead>
+        <thead>
+            <tr>
+                <th>№</th>
+                <th>🎯 Эрсдэл</th>
+                <th>Зээлдэгч</th>
+                <th>Зээлийн дугаар</th>
+                <th>Зээлийн дүн</th>
+                <th>Хэтэрсэн хоног</th>
+                <th>Үлдэгдэл</th>
+                <th>Төлөв</th>
+                <th>Үйлдэл</th>
+            </tr>
+        </thead>
         <tbody>
-        {% for case, loan, borrower, risk in scored_cases %}
-        <tr data-case-id="{{ case.id }}">
-            <td>{{ ((pagination.page - 1) * pagination.per_page) + loop.index }}</td>
-            <td>{{ risk_badge(risk) }}</td>
-            <td><strong>{{ borrower.name }}</strong></td>
-            <td>{{ "{:,.0f}".format(loan.amount) }}₮</td>
-            <td>{{ case.days_overdue }}</td>
-            <td>{{ "{:,.0f}".format(loan.balance) }}₮</td>
-            <td>{{ status_badge(case.status) }}</td>
-            <td><div class="quick-actions"><button class="quick-btn quick-btn-call" onclick="quickAction({{ case.id }},'phone_call','callback')" title="Ярисан">📞</button><button class="quick-btn quick-btn-promise" onclick="quickAction({{ case.id }},'phone_call','promise_made')" title="Амлалт">✅</button><button class="quick-btn quick-btn-noanswer" onclick="quickAction({{ case.id }},'phone_call','no_answer')" title="Хариугүй">❌</button></div></td>
-            <td><button class="btn btn-primary btn-sm" onclick="openActionModal({{ case.id }}, '{{ borrower.name }}')">Үйлдэл</button></td>
-        </tr>
-        {% endfor %}
+            {% for case, loan, borrower, risk in cases %}
+            <tr data-case-id="{{ case.id }}">
+                <td>{{ ((pagination.page - 1) * pagination.per_page) + loop.index }}</td>
+                <td>{{ risk_badge(risk) }}</td>
+                <td><strong>{{ borrower.name }}</strong></td>
+                <td><code>{{ loan.loan_number }}</code></td>
+                <td>{{ "{:,.0f}".format(loan.amount) }}₮</td>
+                <td>{{ case.days_overdue }}</td>
+                <td>{{ "{:,.0f}".format(loan.balance) }}₮</td>
+                <td>{{ status_badge(case.status) }}</td>
+                <td>
+                    <a href="{{ url_for('dashboard.case_detail', loan_id=case.id) }}"
+                       class="btn btn-primary btn-sm">
+                        Дэлгэрэнгүй →
+                    </a>
+                </td>
+            </tr>
+            {% endfor %}
         </tbody>
     </table>
+    {% else %}
+    <div style="padding: 60px 20px; text-align: center; color: #64748B;">
+        <div style="font-size: 48px; margin-bottom: 16px;">📭</div>
+        <h3 style="margin: 0 0 8px 0; color: #334155;">Зээл олдсонгүй</h3>
+        <p style="margin: 0; font-size: 13px;">
+            Таны хайлт болон шүүлтүүрт тохирох зээл байхгүй байна.
+        </p>
+        {% if filter_chips %}
+        <p style="margin-top: 12px;">
+            <a href="{{ url_for('dashboard.dashboard', dashboard_type='loans') }}"
+               style="color: #2563EB; font-weight: 500;">
+                Шүүлтүүрийг цэвэрлэх →
+            </a>
+        </p>
+        {% endif %}
+    </div>
+    {% endif %}
 </div>
 
-{# ─── PAGINATION COMPONENT ────────────────────────────────────────────── #}
-{# Paste this AFTER the closing </table> tag inside the card-panel.        #}
-{# Requires `pagination` dict in context.                                   #}
+{# ════════════════════════════════════════════════════════════════════ #}
+{# 6) PAGINATION                                                        #}
+{# ════════════════════════════════════════════════════════════════════ #}
 
-{% macro pagination_controls(p, role) %}
+{% macro pagination_controls(p) %}
     <div class="pagination-wrap">
-        {# ── Top info row ── #}
         <div class="pagination-info">
             <span><strong>{{ p.start_row }}-{{ p.end_row }}</strong> / <strong>{{ p.total }}</strong> хэрэг</span>
             <span class="pagination-page">Хуудас <strong>{{ p.page }}</strong> / {{ p.total_pages }}</span>
         </div>
-
-        {# ── Page navigation ── #}
         <div class="pagination-nav">
-            {# Previous button #}
             {% if p.has_prev %}
                 <a href="?page={{ p.prev_page }}" class="pg-btn pg-prev">← Өмнөх</a>
             {% else %}
                 <span class="pg-btn pg-prev pg-disabled">← Өмнөх</span>
             {% endif %}
-
-            {# Page numbers — smart display #}
             <div class="pg-pages">
-                {# Always show page 1 #}
                 {% if p.page > 3 %}
                     <a href="?page=1" class="pg-num">1</a>
-                    {% if p.page > 4 %}
-                        <span class="pg-ellipsis">…</span>
-                    {% endif %}
+                    {% if p.page > 4 %}<span class="pg-ellipsis">…</span>{% endif %}
                 {% endif %}
-
-                {# Current page ±2 #}
                 {% for n in range(p.page - 2, p.page + 3) %}
                     {% if n >= 1 and n <= p.total_pages %}
                         {% if n == p.page %}
@@ -112,25 +481,17 @@
                         {% endif %}
                     {% endif %}
                 {% endfor %}
-
-                {# Always show last page #}
                 {% if p.page < p.total_pages - 2 %}
-                    {% if p.page < p.total_pages - 3 %}
-                        <span class="pg-ellipsis">…</span>
-                    {% endif %}
+                    {% if p.page < p.total_pages - 3 %}<span class="pg-ellipsis">…</span>{% endif %}
                     <a href="?page={{ p.total_pages }}" class="pg-num">{{ p.total_pages }}</a>
                 {% endif %}
             </div>
-
-            {# Next button #}
             {% if p.has_next %}
                 <a href="?page={{ p.next_page }}" class="pg-btn pg-next">Дараах →</a>
             {% else %}
                 <span class="pg-btn pg-next pg-disabled">Дараах →</span>
             {% endif %}
         </div>
-
-        {# ── Jump-to-page input ── #}
         <div class="pagination-jump">
             <span>Хуудас руу үсрэх:</span>
             <input type="number" id="pg-jump-input" min="1" max="{{ p.total_pages }}" value="{{ p.page }}" />
@@ -144,7 +505,8 @@
     </div>
 {% endmacro %}
 
-{# Call it: #}
-{{ pagination_controls(pagination, role) }}
+{% if pagination.total_pages > 1 %}
+    {{ pagination_controls(pagination) }}
+{% endif %}
 
 {% endblock %}

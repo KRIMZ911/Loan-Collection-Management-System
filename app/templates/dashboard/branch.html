@@ -1,0 +1,446 @@
+{% extends "base.html" %}
+{% block content %}
+
+{# ════════════════════════════════════════════════════════════════════ #}
+{# STYLES                                                                #}
+{# ════════════════════════════════════════════════════════════════════ #}
+
+<style>
+    /* Header — reused from regional/loans */
+    .loans-header {
+        display: flex; justify-content: space-between; align-items: center;
+        gap: 16px; padding: 20px 24px; background: white;
+        border-radius: 12px; margin-bottom: 16px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .loans-header-left { display: flex; align-items: center; gap: 16px; flex: 1; min-width: 0; flex-wrap: wrap; }
+    .loans-title-icon { font-size: 32px; line-height: 1; }
+    .loans-title-text h1 { margin: 0; font-size: 22px; font-weight: 700; color: #0F172A; }
+    .loans-title-text .subtitle { font-size: 13px; color: #64748B; margin-top: 2px; }
+    .scope-badge {
+        display: inline-flex; align-items: center; gap: 8px;
+        padding: 8px 14px; background: #F1F5F9; border: 1px solid #E2E8F0;
+        border-radius: 999px; font-size: 13px; color: #334155;
+    }
+    .scope-badge .scope-text { font-weight: 600; color: #0F172A; }
+    .scope-badge .scope-sub { color: #64748B; padding-left: 8px;
+        border-left: 1px solid #CBD5E1; margin-left: 4px; }
+    .back-to-menu, .branch-switcher {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 8px 14px; background: white; border: 1px solid #E2E8F0;
+        border-radius: 8px; color: #475569; text-decoration: none;
+        font-size: 13px; font-weight: 500;
+    }
+    .back-to-menu:hover { background: #F8FAFC; border-color: #CBD5E1; color: #0F172A; }
+    .branch-switcher select {
+        border: none; background: transparent; font-size: 13px;
+        font-weight: 500; color: #475569; cursor: pointer;
+    }
+    .branch-switcher select:focus { outline: none; }
+
+    /* Section title */
+    .section-title {
+        font-size: 15px; font-weight: 600; color: #0F172A;
+        margin: 24px 0 12px; padding-left: 4px;
+        display: flex; align-items: center; justify-content: space-between;
+    }
+    .edit-goals-btn {
+        padding: 6px 14px; background: #2563EB; color: white;
+        border-radius: 6px; text-decoration: none;
+        font-size: 12px; font-weight: 500;
+    }
+    .edit-goals-btn:hover { background: #1D4ED8; }
+
+    /* Goal cards */
+    .goals-grid {
+        display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 16px;
+    }
+    .goal-card {
+        background: white; border-radius: 12px; padding: 20px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+        border-top: 4px solid #E2E8F0;
+    }
+    .goal-card.empty { background: #F8FAFC; border-top-color: #94A3B8; }
+    .goal-card-header {
+        display: flex; align-items: center; gap: 10px; margin-bottom: 12px;
+    }
+    .goal-card-icon { font-size: 28px; line-height: 1; }
+    .goal-card-title {
+        font-size: 14px; font-weight: 600; color: #334155;
+    }
+    .goal-numbers {
+        display: flex; align-items: baseline; gap: 6px; margin-bottom: 8px;
+    }
+    .goal-achieved {
+        font-size: 28px; font-weight: 800; color: #0F172A;
+        line-height: 1;
+    }
+    .goal-target {
+        font-size: 14px; color: #64748B;
+    }
+    .progress-bar-bg {
+        background: #F1F5F9; height: 10px; border-radius: 999px;
+        overflow: hidden; margin: 10px 0 4px;
+    }
+    .progress-bar-fill {
+        height: 100%; border-radius: 999px;
+        transition: width 0.3s ease-in-out;
+    }
+    .progress-percentage {
+        font-size: 11px; color: #64748B; font-weight: 600;
+        text-align: right; margin-bottom: 8px;
+    }
+    .pace-status {
+        display: inline-flex; align-items: center; gap: 4px;
+        padding: 4px 10px; border-radius: 999px;
+        font-size: 12px; font-weight: 600;
+        margin-bottom: 8px;
+    }
+    .goal-meta {
+        font-size: 11px; color: #64748B; margin-top: 8px;
+        padding-top: 8px; border-top: 1px solid #F1F5F9;
+        display: flex; justify-content: space-between;
+    }
+    .goal-empty-msg {
+        color: #64748B; font-size: 13px; padding: 24px 0;
+        text-align: center;
+    }
+    .add-goal-link {
+        color: #2563EB; font-size: 12px; font-weight: 500;
+        text-decoration: none;
+    }
+    .add-goal-link:hover { text-decoration: underline; }
+
+    /* Worker table */
+    .worker-name { font-weight: 600; color: #0F172A; }
+    .role-pill {
+        display: inline-block; padding: 2px 8px; background: #F1F5F9;
+        border-radius: 999px; font-size: 11px; color: #475569;
+    }
+    .success-rate-bar {
+        display: inline-block; width: 80px; height: 6px;
+        background: #F1F5F9; border-radius: 3px; overflow: hidden;
+        margin-right: 6px; vertical-align: middle;
+    }
+    .success-rate-fill { height: 100%; background: #22C55E; }
+
+    /* Activity feed */
+    .activity-feed {
+        background: white; border-radius: 12px; padding: 0;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .activity-item {
+        display: grid;
+        grid-template-columns: 80px 1fr auto;
+        gap: 12px;
+        padding: 12px 20px;
+        border-bottom: 1px solid #F1F5F9;
+        text-decoration: none; color: inherit;
+        transition: background 0.15s;
+    }
+    .activity-item:last-child { border-bottom: none; }
+    .activity-item:hover { background: #F8FAFC; }
+    .activity-time {
+        font-size: 11px; color: #64748B; font-weight: 500;
+    }
+    .activity-body { min-width: 0; }
+    .activity-type {
+        font-size: 12px; font-weight: 600; color: #2563EB;
+        margin-bottom: 2px;
+    }
+    .activity-text {
+        font-size: 13px; color: #334155;
+    }
+    .activity-text strong { color: #0F172A; }
+    .activity-notes {
+        font-size: 11px; color: #64748B; margin-top: 4px;
+        font-style: italic;
+    }
+    .reached-badge {
+        font-size: 16px; align-self: center;
+    }
+
+    /* Branch picker (when no branch chosen) */
+    .picker-grid {
+        display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+        gap: 12px; margin-top: 16px;
+    }
+    .picker-card {
+        background: white; border-radius: 12px; padding: 20px;
+        text-align: center; text-decoration: none;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+        transition: all 0.15s; color: #0F172A;
+    }
+    .picker-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+        border-color: #2563EB;
+    }
+    .picker-card-icon { font-size: 36px; margin-bottom: 8px; }
+    .picker-card-name { font-weight: 600; font-size: 14px; }
+    .picker-card-region { font-size: 11px; color: #64748B; margin-top: 4px; }
+</style>
+
+{# ════════════════════════════════════════════════════════════════════ #}
+{# MACROS                                                                #}
+{# ════════════════════════════════════════════════════════════════════ #}
+
+{% macro kpi_row(items) %}
+<div class="kpi-row">
+    {% for it in items %}
+        <div class="kpi-card">
+            <div class="kpi-label">{{ it.label }}</div>
+            <div class="kpi-value">{{ it.value }}</div>
+            {% if it.sub %}<div class="kpi-sub">{{ it.sub }}</div>{% endif %}
+        </div>
+    {% endfor %}
+</div>
+{% endmacro %}
+
+{% set contact_type_labels = {
+    "phone_call":        "Утсаар",
+    "sms":               "SMS",
+    "email":             "Имэйл",
+    "in_person_visit":   "Биечлэн",
+    "official_notice":   "Албан мэдэгдэл",
+    "commitment_letter": "Амлалт",
+    "note":              "Тэмдэглэл"
+} %}
+
+{# ════════════════════════════════════════════════════════════════════ #}
+{# 1) HEADER                                                             #}
+{# ════════════════════════════════════════════════════════════════════ #}
+
+<div class="loans-header">
+    <div class="loans-header-left">
+        <span class="loans-title-icon">{{ dashboard_meta.icon or "🏢" }}</span>
+        <div class="loans-title-text">
+            <h1>{{ dashboard_meta.label_mn or "Салбарын самбар" }}</h1>
+            <div class="subtitle">{{ dashboard_meta.sub_mn or "" }}</div>
+        </div>
+        <div class="scope-badge">
+            <span class="scope-icon">{{ scope_label.icon }}</span>
+            <span class="scope-text">{{ scope_label.text }}</span>
+            {% if scope_label.sub %}<span class="scope-sub">{{ scope_label.sub }}</span>{% endif %}
+        </div>
+
+        {# Branch switcher (only if user can see multiple branches) #}
+        {% if not show_picker and visible_branches and visible_branches | length > 1 %}
+        <div class="branch-switcher">
+            <span>🔄</span>
+            <select onchange="if (this.value) window.location='?branch_id=' + this.value;">
+                {% for b in visible_branches %}
+                    <option value="{{ b.id }}" {% if b.id == current_branch_id %}selected{% endif %}>
+                        {{ b.name }}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+        {% endif %}
+    </div>
+    {% if show_back_button %}
+        <a href="{{ url_for('dashboard.menu') }}" class="back-to-menu">← Цэс рүү</a>
+    {% endif %}
+</div>
+
+{# ════════════════════════════════════════════════════════════════════ #}
+{# PICKER MODE — show when no branch_id specified for multi-branch user  #}
+{# ════════════════════════════════════════════════════════════════════ #}
+
+{% if show_picker %}
+
+<div style="background: white; padding: 40px; border-radius: 12px; text-align: center; margin-bottom: 16px;">
+    <h2 style="margin: 0 0 8px; font-size: 22px;">🏢 Аль салбарыг харах вэ?</h2>
+    <p style="color: #64748B; margin: 0;">Доорхоос салбараа сонгоно уу</p>
+</div>
+
+<div class="picker-grid">
+    {% for b in visible_branches %}
+        <a href="?branch_id={{ b.id }}" class="picker-card">
+            <div class="picker-card-icon">🏢</div>
+            <div class="picker-card-name">{{ b.name }}</div>
+            {% if b.region %}
+                <div class="picker-card-region">🌍 {{ b.region.name }}</div>
+            {% endif %}
+        </a>
+    {% endfor %}
+</div>
+
+{% else %}
+
+{# ════════════════════════════════════════════════════════════════════ #}
+{# 2) KPI TILES                                                          #}
+{# ════════════════════════════════════════════════════════════════════ #}
+
+{{ kpi_row([
+    {"label": "Хэрэг хүлээж буй", "value": "{:,}".format(summary.total_cases),
+     "sub": "Зөрчилтэй зээл"},
+    {"label": "Хэтэрсэн дүн",     "value": "{:,.0f} ₮".format(summary.total_overdue_amount),
+     "sub": "Энэ салбар"},
+    {"label": "Идэвхтэй ажилтан", "value": summary.active_workers_count,
+     "sub": "Энэ салбарт"},
+]) }}
+
+{# ════════════════════════════════════════════════════════════════════ #}
+{# 3) ANNUAL GOAL PROGRESS                                               #}
+{# ════════════════════════════════════════════════════════════════════ #}
+
+<div class="section-title">
+    <span>🎯 {{ "{}".format(goals[0].pace_status.days_total if goals else 365) }} ОНЫ ЗОРИЛТ</span>
+    {% if can_edit_goals %}
+        <a href="{{ url_for('dashboard.dashboard', dashboard_type='branch') }}?branch_id={{ current_branch_id }}#edit-goals"
+           class="edit-goals-btn">✏️ Зорилт засах</a>
+    {% endif %}
+</div>
+
+{% if goals %}
+<div class="goals-grid">
+    {% for g in goals %}
+        <div class="goal-card {% if not g.has_goal %}empty{% endif %}"
+             style="border-top-color: {% if g.has_goal %}{{ g.pace_status.color }}{% else %}#94A3B8{% endif %};">
+
+            <div class="goal-card-header">
+                <span class="goal-card-icon">{{ g.category.icon }}</span>
+                <div class="goal-card-title">{{ g.category.name_mn }}</div>
+            </div>
+
+            {% if g.has_goal %}
+                <div class="goal-numbers">
+                    <span class="goal-achieved">{{ "{:,}".format(g.achieved) }}</span>
+                    <span class="goal-target">/ {{ "{:,}".format(g.target) }} {{ g.category.unit_mn }}</span>
+                </div>
+
+                <div class="progress-bar-bg">
+                    <div class="progress-bar-fill"
+                         style="width: {{ [g.percentage, 100] | min }}%; background: {{ g.pace_status.color }};">
+                    </div>
+                </div>
+                <div class="progress-percentage">{{ "{:.1f}".format(g.percentage) }}%</div>
+
+                <div class="pace-status" style="background: {{ g.pace_status.color }}22; color: {{ g.pace_status.color }};">
+                    {{ g.pace_status.label }}
+                </div>
+
+                <div class="goal-meta">
+                    <span>Үлдсэн: <strong>{{ "{:,}".format(g.remaining) }}</strong></span>
+                    <span>Жилийн эцэст: <strong>~{{ "{:,}".format(g.projected_year_end) }}</strong></span>
+                </div>
+            {% else %}
+                <div class="goal-empty-msg">
+                    📭 Зорилт тогтоогдоогүй
+                </div>
+                {% if can_edit_goals %}
+                    <div style="text-align: center;">
+                        <a href="{{ url_for('dashboard.dashboard', dashboard_type='branch') }}?branch_id={{ current_branch_id }}#add-goal"
+                           class="add-goal-link">Зорилт нэмэх →</a>
+                    </div>
+                {% endif %}
+            {% endif %}
+
+        </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="card-panel" style="text-align: center; padding: 40px;">
+    <div style="font-size: 48px;">📭</div>
+    <p style="color: #64748B;">Идэвхтэй зорилтын ангилал тогтоогдоогүй байна</p>
+</div>
+{% endif %}
+
+{# ════════════════════════════════════════════════════════════════════ #}
+{# 4) WORKER PERFORMANCE                                                 #}
+{# ════════════════════════════════════════════════════════════════════ #}
+
+<div class="section-title">👥 Ажилтны гүйцэтгэл</div>
+
+<div class="card-panel">
+    {% if workers %}
+    <table>
+        <thead>
+            <tr>
+                <th>№</th>
+                <th>Нэр</th>
+                <th>Албан тушаал</th>
+                <th>Хэрэг хүлээж буй</th>
+                <th>Шийдсэн</th>
+                <th>Амжилт</th>
+                <th>Холбоо (30 хон)</th>
+                <th>Сүүлийн идэвх</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for w in workers %}
+            <tr>
+                <td>{{ loop.index }}</td>
+                <td><span class="worker-name">{{ w.name }}</span></td>
+                <td><span class="role-pill">{{ w.role_name }}</span></td>
+                <td>{{ "{:,}".format(w.case_count) }}</td>
+                <td>{{ "{:,}".format(w.resolved_count) }}</td>
+                <td>
+                    <span class="success-rate-bar">
+                        <span class="success-rate-fill" style="width: {{ w.success_rate }}%;"></span>
+                    </span>
+                    {{ "{:.0f}".format(w.success_rate) }}%
+                </td>
+                <td>{{ w.contact_count }}</td>
+                <td>
+                    {% if w.last_activity %}
+                        {{ w.last_activity.strftime("%Y-%m-%d") }}
+                    {% else %}
+                        —
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div style="padding: 60px 20px; text-align: center; color: #64748B;">
+        <div style="font-size: 48px; margin-bottom: 16px;">📭</div>
+        <p style="margin: 0;">Энэ салбарт зээлийн үйл ажиллагаатай ажилтан алга</p>
+    </div>
+    {% endif %}
+</div>
+
+{# ════════════════════════════════════════════════════════════════════ #}
+{# 5) RECENT ACTIVITY FEED                                               #}
+{# ════════════════════════════════════════════════════════════════════ #}
+
+<div class="section-title">📰 Сүүлийн үйл ажиллагаа</div>
+
+<div class="activity-feed">
+    {% if activity %}
+        {% for a in activity %}
+        <a href="{{ url_for('dashboard.case_detail', loan_id=a.loan_id) }}" class="activity-item">
+            <div class="activity-time">
+                {{ a.contact_date.strftime("%m-%d %H:%M") if a.contact_date else "—" }}
+            </div>
+            <div class="activity-body">
+                <div class="activity-type">{{ contact_type_labels.get(a.type, a.type) }}</div>
+                <div class="activity-text">
+                    <strong>{{ a.borrower_name }}</strong>
+                    {% if a.worker_name and a.worker_name != "—" %}
+                        — {{ a.worker_name }}
+                    {% endif %}
+                </div>
+                {% if a.notes %}
+                    <div class="activity-notes">{{ a.notes }}</div>
+                {% endif %}
+            </div>
+            <div class="reached-badge">
+                {% if a.was_reached %}✅{% else %}❌{% endif %}
+            </div>
+        </a>
+        {% endfor %}
+    {% else %}
+        <div style="padding: 40px 20px; text-align: center; color: #64748B;">
+            <div style="font-size: 48px;">📭</div>
+            <p style="margin: 8px 0 0;">Сүүлийн үйл ажиллагаа алга</p>
+        </div>
+    {% endif %}
+</div>
+
+{% endif %} {# end show_picker #}
+
+{% endblock %}
