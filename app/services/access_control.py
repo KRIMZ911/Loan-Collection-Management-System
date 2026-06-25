@@ -78,13 +78,13 @@ DASH_BANK     = "bank"
 DASH_REGIONAL = "regional"
 DASH_BRANCH = "branch"
 DASH_LOANS    = "loans"
+DASH_HOME     = "home"
 
 
 # ════════════════════════════════════════════════════════════════════════════
 # DASHBOARD CATALOG — visual + meta info for the 4 universal dashboards
 # ════════════════════════════════════════════════════════════════════════════
 # Used by the /menu page and dashboard headers. Add new dashboards here.
-
 DASHBOARD_CATALOG: Dict[str, Dict[str, str]] = {
     DASH_BANK: {
         "icon":     "🏦",
@@ -114,8 +114,14 @@ DASHBOARD_CATALOG: Dict[str, Dict[str, str]] = {
         "color":    "#2563EB",
         "sub_mn":   "Зээлийн хэрэг, дэлгэрэнгүй мэдээлэл",
     },
+    DASH_HOME: {
+        "icon":     "🏠",
+        "label_mn": "Миний самбар",
+        "label_en": "My Dashboard",
+        "color":    "#0EA5E9",
+        "sub_mn":   "Өөрийн сонгосон виджетүүд",
+    },
 }
-
 
 # ════════════════════════════════════════════════════════════════════════════
 # 1) STATIC POLICY — ROLE_ACCESS
@@ -136,7 +142,7 @@ DASHBOARD_CATALOG: Dict[str, Dict[str, str]] = {
 def _branch_worker(segment: Optional[str] = None) -> Dict[str, Any]:
     """Default profile: branch-floor worker. One dashboard: loans."""
     return {
-        "dashboards":                  [DASH_LOANS],
+        "dashboards":                  [DASH_LOANS, DASH_HOME],
         "geo_scope":                   GEO_OWN_BRANCH,
         "segment_filter":              segment,
         "hide_personal":               False,
@@ -150,7 +156,7 @@ def _branch_worker(segment: Optional[str] = None) -> Dict[str, Any]:
 def _branch_manager() -> Dict[str, Any]:
     """Default profile: branch-level manager. Two dashboards: branches + loans."""
     return {
-        "dashboards":                  [DASH_BRANCH, DASH_LOANS],
+        "dashboards":                  [DASH_BRANCH, DASH_LOANS, DASH_HOME],
         "geo_scope":                   GEO_OWN_BRANCH,
         "segment_filter":              None,
         "hide_personal":               False,
@@ -164,7 +170,7 @@ def _branch_manager() -> Dict[str, Any]:
 def _hq_specialist(segment: Optional[str] = None) -> Dict[str, Any]:
     """Default profile: HQ specialist (BPUH, TAUG, etc.). Bank-wide loans only."""
     return {
-        "dashboards":                  [DASH_LOANS],
+        "dashboards":                  [DASH_LOANS, DASH_HOME],
         "geo_scope":                   GEO_BANK_WIDE,
         "segment_filter":              segment,
         "hide_personal":               False,
@@ -201,7 +207,7 @@ ROLE_ACCESS: Dict[str, Dict[str, Any]] = {
 
     # ─── REGIONAL DIRECTOR — three dashboards, own region ─────────────────
     "regional_director": {
-        "dashboards":                  [DASH_REGIONAL, DASH_BRANCH, DASH_LOANS],
+        "dashboards":                  [DASH_REGIONAL, DASH_BRANCH, DASH_LOANS, DASH_HOME],
         "geo_scope":                   GEO_OWN_REGION,
         "segment_filter":              None,
         "hide_personal":               False,
@@ -245,7 +251,7 @@ ROLE_ACCESS: Dict[str, Dict[str, Any]] = {
 
     # Risk dept director — gets branches dashboard too for oversight
     "risk_dept_director": {
-        "dashboards":                  [DASH_BRANCH, DASH_LOANS],
+        "dashboards":                  [DASH_BRANCH, DASH_LOANS, DASH_HOME],
         "geo_scope":                   GEO_BANK_WIDE,
         "segment_filter":              None,
         "hide_personal":               False,
@@ -259,7 +265,7 @@ ROLE_ACCESS: Dict[str, Dict[str, Any]] = {
     # NOTE: OutsourcingAssignment has no user FK yet — for now we scope by
     # company_name matching User.name. TODO: add assigned_to_user_id field.
     "outsourcing_agent": {
-        "dashboards":                  [DASH_LOANS],
+        "dashboards":                  [DASH_LOANS, DASH_HOME],
         "geo_scope":                   GEO_OWN_ASSIGNMENTS,
         "segment_filter":              None,
         "hide_personal":               True,
@@ -271,7 +277,7 @@ ROLE_ACCESS: Dict[str, Dict[str, Any]] = {
 
     # ─── EXECUTIVE (Удирдлага) — all four dashboards, full visibility ─────
     "executive": {
-        "dashboards":                  [DASH_BANK, DASH_REGIONAL, DASH_BRANCH, DASH_LOANS],
+        "dashboards":                  [DASH_BANK, DASH_REGIONAL, DASH_BRANCH, DASH_LOANS, DASH_HOME],
         "geo_scope":                   GEO_BANK_WIDE,
         "segment_filter":              None,
         "hide_personal":               False,

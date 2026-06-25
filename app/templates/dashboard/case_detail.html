@@ -2,7 +2,7 @@
 {% block content %}
 
 {# ── Back button ── #}
-<a href="{{ url_for('dashboard.dashboard') }}" style="display:inline-flex;align-items:center;gap:6px;color:#2563EB;text-decoration:none;font-size:14px;margin-bottom:20px;">
+<a href="{{ request.referrer or url_for('dashboard.dashboard') }}" style="display:inline-flex;align-items:center;gap:6px;color:#2563EB;text-decoration:none;font-size:14px;margin-bottom:20px;">
     ← Буцах
 </a>
 
@@ -120,7 +120,7 @@
 {# ── Action Button ── #}
 <div style="margin-top:24px;display:flex;gap:10px;">
     <button class="btn btn-primary" onclick="openActionModal({{ case.id }}, '{{ borrower.name if borrower else "" }}')">📝 Үйлдэл бүртгэх</button>
-    <a href="{{ url_for('dashboard.dashboard') }}" class="btn btn-outline">← Жагсаалт руу буцах</a>
+    {{ request.referrer or url_for('dashboard.dashboard', dashboard_type='loans') }}← Жагсаалт руу буцах</a>
 </div>
 
 {% endblock %}

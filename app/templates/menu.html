@@ -45,7 +45,14 @@
         <strong>{{ user_name }}</strong><br>
         {{ role_name }}{% if role_sub %} — 🏢 {{ role_sub }}{% endif %}
     </div>
-    <a href="{{ url_for('auth.logout') }}" class="logout">Гарах →</a>
+    <div style="display: flex; gap: 12px; align-items: center;">
+        {% if has_admin_access %}
+            <a href="{{ url_for('admin.index') }}" class="logout" style="color: #475569;">
+                ⚙ Удирдлага
+            </a>
+        {% endif %}
+        <a href="{{ url_for('auth.logout') }}" class="logout">Гарах →</a>
+    </div>
 </div>
 
 <div class="role-page">

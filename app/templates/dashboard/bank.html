@@ -1,0 +1,378 @@
+{% extends "base.html" %}
+{% block content %}
+
+{# ════════════════════════════════════════════════════════════════════ #}
+{# STYLES — bank dashboard                                              #}
+{# ════════════════════════════════════════════════════════════════════ #}
+
+<style>
+    /* Header (same pattern as regional/branch) */
+    .loans-header {
+        display: flex; justify-content: space-between; align-items: center;
+        gap: 16px; padding: 20px 24px; background: white;
+        border-radius: 12px; margin-bottom: 16px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .loans-header-left { display: flex; align-items: center; gap: 16px; flex: 1; min-width: 0; }
+    .loans-title-icon { font-size: 32px; line-height: 1; }
+    .loans-title-text h1 { margin: 0; font-size: 22px; font-weight: 700; color: #0F172A; }
+    .loans-title-text .subtitle { font-size: 13px; color: #64748B; margin-top: 2px; }
+    .scope-badge {
+        display: inline-flex; align-items: center; gap: 8px;
+        padding: 8px 14px; background: #F1F5F9; border: 1px solid #E2E8F0;
+        border-radius: 999px; font-size: 13px; color: #334155;
+    }
+    .scope-badge .scope-text { font-weight: 600; color: #0F172A; }
+    .scope-badge .scope-sub { color: #64748B; padding-left: 8px;
+        border-left: 1px solid #CBD5E1; margin-left: 4px; }
+    .back-to-menu {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 8px 14px; background: white; border: 1px solid #E2E8F0;
+        border-radius: 8px; color: #475569; text-decoration: none;
+        font-size: 13px; font-weight: 500; transition: all 0.15s;
+    }
+    .back-to-menu:hover { background: #F8FAFC; border-color: #CBD5E1; color: #0F172A; }
+
+    /* Section heading */
+    .section-title {
+        font-size: 15px; font-weight: 600; color: #0F172A;
+        margin: 24px 0 12px; padding-left: 4px;
+    }
+
+    /* Goal aggregate cards */
+    .goals-grid {
+        display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 16px;
+    }
+    .goal-card {
+        background: white; border-radius: 12px; padding: 20px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+        border-top: 4px solid #E2E8F0;
+    }
+    .goal-card.empty { background: #F8FAFC; border-top-color: #94A3B8; }
+    .goal-card-title {
+        font-size: 14px; font-weight: 700; color: #334155;
+        margin-bottom: 12px;
+    }
+    .goal-numbers {
+        display: flex; align-items: baseline; gap: 6px; margin-bottom: 8px;
+    }
+    .goal-achieved {
+        font-size: 28px; font-weight: 800; color: #0F172A; line-height: 1;
+    }
+    .goal-target {
+        font-size: 13px; color: #64748B;
+    }
+    .progress-bar-bg {
+        background: #F1F5F9; height: 10px; border-radius: 999px;
+        overflow: hidden; margin: 10px 0 4px;
+    }
+    .progress-bar-fill {
+        height: 100%; border-radius: 999px;
+        transition: width 0.3s ease-in-out;
+    }
+    .progress-percentage {
+        font-size: 24px; font-weight: 800; color: #0F172A;
+        text-align: right; margin-top: 4px;
+    }
+    .goal-meta {
+        font-size: 11px; color: #64748B; margin-top: 8px;
+        padding-top: 8px; border-top: 1px solid #F1F5F9;
+    }
+    .goal-empty-msg {
+        color: #64748B; font-size: 13px; padding: 24px 0;
+        text-align: center; font-style: italic;
+    }
+
+    /* Region comparison */
+    .region-link { color: #0F172A; text-decoration: none; font-weight: 600; }
+    .region-link:hover { color: #2563EB; text-decoration: underline; }
+
+    .risk-pill {
+        display: inline-block; padding: 2px 8px; border-radius: 999px;
+        font-size: 12px; font-weight: 600;
+    }
+    .risk-pill.zero { background: #F1F5F9; color: #64748B; }
+    .risk-pill.some { background: #FEE2E2; color: #B91C1C; }
+
+    .view-region-btn {
+        display: inline-block; padding: 6px 12px;
+        background: #0D9488; color: white;
+        border-radius: 6px; text-decoration: none;
+        font-size: 12px; font-weight: 500;
+    }
+    .view-region-btn:hover { background: #0F766E; }
+
+    /* Trend chart */
+    .trend-panel {
+        background: white; border-radius: 12px; padding: 20px 24px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .trend-svg-wrap {
+        position: relative;
+        margin: 16px 0 8px;
+    }
+    .trend-svg {
+        width: 100%; height: 200px;
+        display: block;
+    }
+    .trend-labels {
+        display: grid;
+        grid-template-columns: repeat(6, 1fr);
+        gap: 8px;
+        margin-top: 8px;
+    }
+    .trend-label {
+        text-align: center;
+        font-size: 11px;
+        color: #64748B;
+    }
+    .trend-label .num {
+        display: block;
+        font-size: 16px;
+        font-weight: 700;
+        color: #0F172A;
+        margin-top: 4px;
+    }
+</style>
+
+{# ════════════════════════════════════════════════════════════════════ #}
+{# MACROS                                                                #}
+{# ════════════════════════════════════════════════════════════════════ #}
+
+{% macro kpi_row(items) %}
+<div class="kpi-row">
+    {% for it in items %}
+        <div class="kpi-card">
+            <div class="kpi-label">{{ it.label }}</div>
+            <div class="kpi-value">{{ it.value }}</div>
+            {% if it.sub %}<div class="kpi-sub">{{ it.sub }}</div>{% endif %}
+        </div>
+    {% endfor %}
+</div>
+{% endmacro %}
+
+{# Pick progress bar color by percentage #}
+{% macro pace_color(pct) -%}
+    {%- if pct is none or pct == 0 -%}#94A3B8
+    {%- elif pct >= 95 -%}#16A34A
+    {%- elif pct >= 80 -%}#22C55E
+    {%- elif pct >= 50 -%}#F59E0B
+    {%- else -%}#DC2626
+    {%- endif -%}
+{%- endmacro %}
+
+{# ════════════════════════════════════════════════════════════════════ #}
+{# 1) HEADER                                                             #}
+{# ════════════════════════════════════════════════════════════════════ #}
+
+<div class="loans-header">
+    <div class="loans-header-left">
+        <span class="loans-title-icon">{{ dashboard_meta.icon or "Bank" }}</span>
+        <div class="loans-title-text">
+            <h1>{{ dashboard_meta.label_mn or "Банкны нэгтгэл" }}</h1>
+            <div class="subtitle">{{ dashboard_meta.sub_mn or "" }}</div>
+        </div>
+        <div class="scope-badge">
+            <span class="scope-icon">{{ scope_label.icon }}</span>
+            <span class="scope-text">{{ scope_label.text }}</span>
+            {% if scope_label.sub %}<span class="scope-sub">{{ scope_label.sub }}</span>{% endif %}
+        </div>
+    </div>
+
+    <div style="display: flex; gap: 8px; align-items: center;">
+        {% if has_admin_access %}
+            <a href="{{ url_for('admin.index') }}" class="back-to-menu" title="Удирдлагын самбар">
+                Тохиргоо
+            </a>
+        {% endif %}
+        {% if show_back_button %}
+            <a href="{{ url_for('dashboard.menu') }}" class="back-to-menu">Цэс рүү</a>
+        {% endif %}
+    </div>
+</div>
+
+{# ════════════════════════════════════════════════════════════════════ #}
+{# 2) KPI STRIP                                                          #}
+{# ════════════════════════════════════════════════════════════════════ #}
+
+{{ kpi_row([
+    {"label": "Нийт салбар",        "value": total_branches,                          "sub": "Бүх банкны хүрээнд"},
+    {"label": "Зөрчилтэй хэрэг",    "value": "{:,}".format(total_cases),              "sub": "Идэвхтэй зөрчил"},
+    {"label": "Нийт хэтэрсэн өр",   "value": "{:,.0f} ₮".format(total_overdue),       "sub": "Бүх бүс нийт"},
+]) }}
+
+{# ════════════════════════════════════════════════════════════════════ #}
+{# 3) BANK-WIDE GOAL AGGREGATE                                           #}
+{# ════════════════════════════════════════════════════════════════════ #}
+
+<div class="section-title">{{ goals[0].category.unit_mn if goals else "" and "" }}{{ "{}".format(goals[0]) if False else "" }}2026 оны нэгтгэсэн зорилт</div>
+
+{% if goals %}
+<div class="goals-grid">
+    {% for g in goals %}
+        {% set pct = g.percentage or 0 %}
+        {% set color = pace_color(pct) %}
+        <div class="goal-card{% if g.total_target == 0 %} empty{% endif %}"
+             style="border-top-color: {{ color }};">
+
+            <div class="goal-card-title">{{ g.category.name_mn }}</div>
+
+            {% if g.total_target > 0 %}
+                <div class="goal-numbers">
+                    <span class="goal-achieved">{{ "{:,}".format(g.total_achieved) }}</span>
+                    <span class="goal-target">/ {{ "{:,}".format(g.total_target) }} {{ g.category.unit_mn }}</span>
+                </div>
+
+                <div class="progress-bar-bg">
+                    <div class="progress-bar-fill"
+                         style="width: {{ [pct, 100] | min }}%; background: {{ color }};">
+                    </div>
+                </div>
+                <div class="progress-percentage">{{ "{:.1f}".format(pct) }}%</div>
+
+                <div class="goal-meta">
+                    {{ g.branches_with_goals }}/{{ g.branches_total }} салбарт зорилт тогтоосон
+                </div>
+            {% else %}
+                <div class="goal-empty-msg">
+                    Зорилт тогтоогдоогүй
+                </div>
+            {% endif %}
+        </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="card-panel" style="padding: 40px; text-align: center; color: #64748B;">
+    Идэвхтэй зорилтын ангилал тогтоогдоогүй байна
+</div>
+{% endif %}
+
+{# ════════════════════════════════════════════════════════════════════ #}
+{# 4) REGIONS COMPARISON                                                 #}
+{# ════════════════════════════════════════════════════════════════════ #}
+
+<div class="section-title">Бүсийн харьцуулалт</div>
+
+<div class="card-panel">
+    {% if regions %}
+    <table>
+        <thead>
+            <tr>
+                <th>№</th>
+                <th>Бүс</th>
+                <th>Салбар</th>
+                <th>Зөрчилтэй хэрэг</th>
+                <th>Хэтэрсэн дүн</th>
+                <th>Дундаж хоног</th>
+                <th>Өндөр эрсдэл</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for r in regions %}
+            <tr>
+                <td>{{ loop.index }}</td>
+                <td>
+                    <span class="region-link">{{ r.name }}</span>
+                </td>
+                <td>{{ r.branch_count }} салбар</td>
+                <td>{{ "{:,}".format(r.total_cases) }}</td>
+                <td><strong>{{ "{:,.0f}".format(r.total_overdue_amount) }} ₮</strong></td>
+                <td>{{ "{:.1f}".format(r.avg_delinquency_days) }}</td>
+                <td>
+                    {% if r.high_risk_count > 0 %}
+                        <span class="risk-pill some">{{ r.high_risk_count }}</span>
+                    {% else %}
+                        <span class="risk-pill zero">0</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div style="padding: 60px 20px; text-align: center; color: #64748B;">
+        <p>Танд харагдах бүс алга</p>
+    </div>
+    {% endif %}
+</div>
+
+{# ════════════════════════════════════════════════════════════════════ #}
+{# 5) DELINQUENCY TREND (SVG sparkline)                                  #}
+{# ════════════════════════════════════════════════════════════════════ #}
+
+<div class="section-title">6 сарын зөрчилтэй зээлийн чиг хандлага</div>
+
+<div class="trend-panel">
+    {% if trend %}
+        {% set svg_width = 600 %}
+        {% set svg_height = 200 %}
+        {% set padding = 20 %}
+        {% set inner_w = svg_width - padding * 2 %}
+        {% set inner_h = svg_height - padding * 2 %}
+        {% set step = (inner_w / (trend|length - 1)) if trend|length > 1 else inner_w %}
+
+        <div class="trend-svg-wrap">
+            <svg class="trend-svg" viewBox="0 0 {{ svg_width }} {{ svg_height }}" preserveAspectRatio="none">
+                {# Grid lines (4 horizontal) #}
+                {% for i in range(5) %}
+                    {% set y = padding + (inner_h * i / 4) %}
+                    <line x1="{{ padding }}" y1="{{ y }}" x2="{{ svg_width - padding }}" y2="{{ y }}"
+                          stroke="#F1F5F9" stroke-width="1"/>
+                {% endfor %}
+
+                {# Build polyline points #}
+                {% set points = [] %}
+                {% for m in trend %}
+                    {% set x = padding + (loop.index0 * step) %}
+                    {% set y_norm = (m.delinquent_count / trend_max) if trend_max > 0 else 0 %}
+                    {% set y = padding + inner_h - (y_norm * inner_h) %}
+                    {% set _ = points.append(x|string ~ "," ~ y|string) %}
+                {% endfor %}
+
+                {# Area fill under line #}
+                {% set first_pt = points[0] if points else "0,0" %}
+                {% set last_pt = points[-1] if points else "0,0" %}
+                {% set first_x = first_pt.split(",")[0] %}
+                {% set last_x = last_pt.split(",")[0] %}
+                {% set bottom_y = padding + inner_h %}
+                <polygon
+                    fill="#2563EB"
+                    fill-opacity="0.1"
+                    points="{{ first_x }},{{ bottom_y }} {{ points|join(' ') }} {{ last_x }},{{ bottom_y }}"/>
+
+                {# Line connecting points #}
+                <polyline
+                    fill="none"
+                    stroke="#2563EB"
+                    stroke-width="2.5"
+                    stroke-linejoin="round"
+                    points="{{ points|join(' ') }}"/>
+
+                {# Dots at each point #}
+                {% for m in trend %}
+                    {% set x = padding + (loop.index0 * step) %}
+                    {% set y_norm = (m.delinquent_count / trend_max) if trend_max > 0 else 0 %}
+                    {% set y = padding + inner_h - (y_norm * inner_h) %}
+                    <circle cx="{{ x }}" cy="{{ y }}" r="5"
+                            fill="white" stroke="#2563EB" stroke-width="2.5"/>
+                {% endfor %}
+            </svg>
+        </div>
+
+        <div class="trend-labels">
+            {% for m in trend %}
+                <div class="trend-label">
+                    {{ m.month_label }}
+                    <span class="num">{{ m.delinquent_count }}</span>
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div style="text-align: center; padding: 40px; color: #64748B;">
+            Чиг хандлагын мэдээлэл алга
+        </div>
+    {% endif %}
+</div>
+
+{% endblock %}

@@ -1,0 +1,329 @@
+{% extends "base.html" %}
+{% block content %}
+
+
+<style>
+    .admin-header {
+        display: flex; justify-content: space-between; align-items: center;
+        gap: 16px; padding: 20px 24px; background: white;
+        border-radius: 12px; margin-bottom: 16px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .admin-header-left { display: flex; align-items: center; gap: 16px; }
+    .admin-icon { font-size: 32px; line-height: 1; }
+    .admin-title h1 { margin: 0; font-size: 22px; font-weight: 700; color: #0F172A; }
+    .admin-title .breadcrumb { font-size: 13px; color: #64748B; margin-top: 2px; }
+    .admin-btn-back {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 8px 14px; background: white; border: 1px solid #E2E8F0;
+        border-radius: 8px; color: #475569; text-decoration: none;
+        font-size: 13px; font-weight: 500;
+    }
+    .admin-btn-back:hover { background: #F8FAFC; border-color: #CBD5E1; color: #0F172A; }
+
+    /* Flash messages */
+    .flash-messages { margin-bottom: 16px; }
+    .flash-msg {
+        padding: 12px 16px; border-radius: 8px; margin-bottom: 8px;
+        font-size: 14px; font-weight: 500;
+    }
+    .flash-success { background: #DCFCE7; color: #166534; border: 1px solid #BBF7D0; }
+    .flash-error   { background: #FEE2E2; color: #991B1B; border: 1px solid #FECACA; }
+    .flash-warning { background: #FEF3C7; color: #92400E; border: 1px solid #FDE68A; }
+
+    /* Card grid (used by index) */
+    .admin-cards {
+        display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 16px;
+    }
+    .admin-card {
+        background: white; border-radius: 12px; padding: 24px;
+        text-decoration: none; color: inherit;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+        border-top: 4px solid #E2E8F0;
+        transition: all 0.15s;
+        display: block;
+    }
+    .admin-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    }
+    .admin-card-icon { font-size: 36px; margin-bottom: 8px; }
+    .admin-card-title { font-size: 16px; font-weight: 700; color: #0F172A; }
+    .admin-card-sub { font-size: 13px; color: #64748B; margin-top: 4px; }
+
+    /* Filter bar */
+    .filter-bar {
+        background: white; border-radius: 12px; padding: 16px 20px;
+        margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+        display: flex; gap: 12px; align-items: end; flex-wrap: wrap;
+    }
+    .filter-group { display: flex; flex-direction: column; gap: 4px; min-width: 140px; }
+    .filter-group label {
+        font-size: 11px; color: #64748B; font-weight: 600;
+        text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    .filter-group select, .filter-group input, .filter-group textarea {
+        padding: 8px 10px; font-size: 13px;
+        border: 1px solid #E2E8F0; border-radius: 8px;
+        background: white;
+    }
+    .filter-group select:focus, .filter-group input:focus, .filter-group textarea:focus {
+        outline: none; border-color: #2563EB;
+    }
+    .filter-btn {
+        padding: 9px 18px; background: #2563EB; color: white;
+        border: none; border-radius: 8px; font-size: 13px; font-weight: 600;
+        cursor: pointer;
+    }
+    .filter-btn:hover { background: #1D4ED8; }
+    .filter-clear {
+        padding: 9px 18px; background: white; color: #64748B;
+        border: 1px solid #E2E8F0; border-radius: 8px; font-size: 13px;
+        text-decoration: none;
+    }
+    .filter-clear:hover { background: #F8FAFC; }
+
+    /* Action buttons row */
+    .action-row {
+        display: flex; justify-content: space-between; align-items: center;
+        margin-bottom: 16px;
+    }
+    .action-row-count { font-size: 13px; color: #64748B; }
+    .action-row-buttons { display: flex; gap: 8px; }
+    .btn-primary {
+        padding: 9px 16px; background: #2563EB; color: white;
+        border-radius: 8px; text-decoration: none; font-size: 13px;
+        font-weight: 600; border: none; cursor: pointer;
+        display: inline-flex; align-items: center; gap: 6px;
+    }
+    .btn-primary:hover { background: #1D4ED8; }
+    .btn-secondary {
+        padding: 9px 16px; background: white; color: #475569;
+        border: 1px solid #E2E8F0; border-radius: 8px; text-decoration: none;
+        font-size: 13px; font-weight: 500;
+        display: inline-flex; align-items: center; gap: 6px;
+    }
+    .btn-secondary:hover { background: #F8FAFC; }
+    .btn-danger {
+        padding: 9px 16px; background: #DC2626; color: white;
+        border-radius: 8px; font-size: 13px; font-weight: 600;
+        border: none; cursor: pointer;
+        display: inline-flex; align-items: center; gap: 6px;
+    }
+    .btn-danger:hover { background: #B91C1C; }
+
+    /* Table */
+    .data-table {
+        background: white; border-radius: 12px; overflow: hidden;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .data-table table { width: 100%; border-collapse: collapse; }
+    .data-table th, .data-table td {
+        padding: 12px 16px; text-align: left; font-size: 13px;
+        border-bottom: 1px solid #F1F5F9;
+    }
+    .data-table th {
+        background: #F8FAFC; font-size: 11px; color: #64748B;
+        text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;
+    }
+    .data-table tr:last-child td { border-bottom: none; }
+    .data-table tr:hover { background: #FAFBFC; }
+    .row-actions { display: flex; gap: 4px; }
+    .icon-btn {
+        padding: 6px 10px; border-radius: 6px; text-decoration: none;
+        font-size: 14px; transition: all 0.15s;
+    }
+    .icon-btn-edit { background: #DBEAFE; color: #1D4ED8; }
+    .icon-btn-edit:hover { background: #BFDBFE; }
+    .icon-btn-delete { background: #FEE2E2; color: #B91C1C; }
+    .icon-btn-delete:hover { background: #FECACA; }
+
+    /* Forms */
+    .form-card {
+        background: white; border-radius: 12px; padding: 24px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06); max-width: 720px;
+    }
+    .form-row { margin-bottom: 16px; }
+    .form-row label {
+        display: block; font-size: 12px; color: #334155; font-weight: 600;
+        margin-bottom: 6px;
+    }
+    .form-row input, .form-row select, .form-row textarea {
+        width: 100%; padding: 10px 12px; font-size: 14px;
+        border: 1px solid #E2E8F0; border-radius: 8px; box-sizing: border-box;
+    }
+    .form-row input:focus, .form-row select:focus, .form-row textarea:focus {
+        outline: none; border-color: #2563EB;
+    }
+    .form-row .help { font-size: 11px; color: #64748B; margin-top: 4px; }
+    .readonly-field {
+        padding: 10px 12px; background: #F1F5F9; border-radius: 8px;
+        font-size: 14px; color: #475569;
+    }
+    .form-actions {
+        display: flex; gap: 8px; margin-top: 24px;
+        padding-top: 16px; border-top: 1px solid #F1F5F9;
+    }
+    .audit-info {
+        background: #F8FAFC; border-radius: 8px; padding: 12px 16px;
+        font-size: 12px; color: #64748B; margin-top: 16px;
+    }
+    .audit-info strong { color: #334155; }
+
+    /* Delete confirm */
+    .danger-card {
+        background: white; border-radius: 12px; padding: 32px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+        border-top: 4px solid #DC2626; max-width: 600px;
+    }
+    .danger-card h2 {
+        margin: 0 0 16px; font-size: 22px; color: #DC2626;
+    }
+    .summary-grid {
+        display: grid; grid-template-columns: 140px 1fr; gap: 8px 16px;
+        margin: 20px 0; padding: 16px; background: #F8FAFC; border-radius: 8px;
+        font-size: 14px;
+    }
+    .summary-grid dt { color: #64748B; font-weight: 600; }
+    .summary-grid dd { margin: 0; color: #0F172A; }
+    .warning-banner {
+        background: #FEF3C7; color: #92400E; padding: 12px 16px;
+        border-radius: 8px; margin: 16px 0; font-size: 13px;
+        border: 1px solid #FDE68A;
+    }
+
+    /* Bulk form table */
+    .bulk-table {
+        width: 100%; margin-top: 8px;
+        border-collapse: collapse;
+    }
+    .bulk-table td {
+        padding: 10px 8px; border-bottom: 1px solid #F1F5F9; font-size: 14px;
+    }
+    .bulk-cat-icon { font-size: 24px; width: 40px; }
+    .bulk-cat-name { font-weight: 600; color: #0F172A; }
+    .bulk-input { width: 140px; }
+    .bulk-unit { color: #64748B; font-size: 13px; width: 80px; }
+
+    .empty-state {
+        background: white; border-radius: 12px; padding: 60px 24px;
+        text-align: center; color: #64748B;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .empty-state .icon { font-size: 48px; margin-bottom: 12px; }
+</style>
+
+
+<div class="admin-header">
+    <div class="admin-header-left">
+        <span class="admin-icon">{% if mode == "new" %}🎯{% else %}✏{% endif %}</span>
+        <div class="admin-title">
+            <h1>{% if mode == "new" %}Шинэ зорилт нэмэх{% else %}Зорилт засах{% endif %}</h1>
+            <div class="breadcrumb">⚙️ Удирдлагын самбар → 🎯 Зорилт удирдах → {% if mode == "new" %}Шинэ{% else %}Засварлах{% endif %}</div>
+        </div>
+    </div>
+    <a href="{{ url_for('admin.goals_list') }}" class="admin-btn-back">← Жагсаалт руу</a>
+</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        <div class="flash-messages">
+            {% for category, message in messages %}
+                <div class="flash-msg flash-{{ category }}">{{ message }}</div>
+            {% endfor %}
+        </div>
+    {% endif %}
+{% endwith %}
+
+<form method="POST" action="{{ form_action }}" class="form-card">
+
+    {# ─── Year ─── #}
+    <div class="form-row">
+        <label>Жил</label>
+        {% if mode == "edit" %}
+            <div class="readonly-field">{{ goal.year }}</div>
+        {% else %}
+            <select name="year" required>
+                {% for y in available_years %}
+                    <option value="{{ y }}" {% if y == default_year %}selected{% endif %}>{{ y }}</option>
+                {% endfor %}
+            </select>
+        {% endif %}
+    </div>
+
+    {# ─── Branch ─── #}
+    <div class="form-row">
+        <label>Салбар</label>
+        {% if mode == "edit" %}
+            <div class="readonly-field">🏢 {{ goal.branch.name }}</div>
+        {% else %}
+            <select name="branch_id" required>
+                <option value="">— Сонгох —</option>
+                {% for b in branches %}
+                    <option value="{{ b.id }}"
+                        {% if prefill_branch_id == b.id %}selected{% endif %}>
+                        {{ b.name }}
+                    </option>
+                {% endfor %}
+            </select>
+        {% endif %}
+    </div>
+
+    {# ─── Category ─── #}
+    <div class="form-row">
+        <label>Ангилал</label>
+        {% if mode == "edit" %}
+            <div class="readonly-field">{{ goal.category.icon }} {{ goal.category.name_mn }}</div>
+        {% else %}
+            <select name="category_id" required>
+                <option value="">— Сонгох —</option>
+                {% for c in categories %}
+                    <option value="{{ c.id }}">{{ c.icon }} {{ c.name_mn }}</option>
+                {% endfor %}
+            </select>
+        {% endif %}
+    </div>
+
+    {# ─── Target count ─── #}
+    <div class="form-row">
+        <label>Жилийн зорилт (тоо)</label>
+        <input type="number" name="target_count" min="0" required
+               value="{{ goal.target_count if mode == 'edit' else '' }}"
+               placeholder="1200">
+        <div class="help">Энэ салбарт энэ жилд хүрэх ёстой тоо</div>
+    </div>
+
+    {# ─── Notes ─── #}
+    <div class="form-row">
+        <label>Тайлбар (заавал биш)</label>
+        <textarea name="notes" rows="3"
+                  placeholder="Жишээ: 2-р улирлаас эхэлж шинэ кампанит ажил...">{{ goal.notes or "" if mode == "edit" else "" }}</textarea>
+    </div>
+
+    <div class="form-actions">
+        <button type="submit" class="btn-primary">
+            {% if mode == "new" %}＋ Үүсгэх{% else %}💾 Хадгалах{% endif %}
+        </button>
+        <a href="{{ url_for('admin.goals_list') }}" class="btn-secondary">Болих</a>
+    </div>
+
+    {# ─── Audit info (edit mode only) ─── #}
+    {% if mode == "edit" %}
+        <div class="audit-info">
+            <div>📌 <strong>Тогтоосон:</strong>
+                {% if goal.set_by %}{{ goal.set_by.name }}{% else %}—{% endif %}
+                ({{ goal.set_at.strftime("%Y-%m-%d %H:%M") if goal.set_at else "—" }})
+            </div>
+            {% if goal.updated_by %}
+                <div style="margin-top: 4px;">✏ <strong>Сүүлд:</strong>
+                    {{ goal.updated_by.name }}
+                    ({{ goal.updated_at.strftime("%Y-%m-%d %H:%M") if goal.updated_at else "—" }})
+                </div>
+            {% endif %}
+        </div>
+    {% endif %}
+
+</form>
+
+{% endblock %}

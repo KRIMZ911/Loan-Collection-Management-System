@@ -49,7 +49,7 @@
 {# ════════════════════════════════════════════════════════════════════ #}
 
 <style>
-    /* ─── Header (from C.1) ─── */
+    /* ─── Header ─── */
     .loans-header {
         display: flex; justify-content: space-between; align-items: center;
         gap: 16px; padding: 20px 24px; background: white;
@@ -166,7 +166,7 @@
     }
     .clear-all:hover { text-decoration: underline; }
 
-    /* ─── Results summary (from C.1) ─── */
+    /* ─── Results summary ─── */
     .results-summary {
         padding: 12px 20px; background: #FAFBFC; border-radius: 8px;
         font-size: 13px; color: #64748B; margin-bottom: 16px;
@@ -191,9 +191,17 @@
             {% if scope_label.sub %}<span class="scope-sub">{{ scope_label.sub }}</span>{% endif %}
         </div>
     </div>
-    {% if show_back_button %}
-        <a href="{{ url_for('dashboard.menu') }}" class="back-to-menu">← Цэс рүү</a>
-    {% endif %}
+
+    <div style="display: flex; gap: 8px; align-items: center;">
+        {% if has_admin_access %}
+            <a href="{{ url_for('admin.index') }}" class="back-to-menu" title="Удирдлагын самбар">
+                ⚙ Тохиргоо
+            </a>
+        {% endif %}
+        {% if show_back_button %}
+            <a href="{{ url_for('dashboard.menu') }}" class="back-to-menu">← Цэс рүү</a>
+        {% endif %}
+    </div>
 </div>
 
 {# ════════════════════════════════════════════════════════════════════ #}
@@ -455,7 +463,16 @@
 {# 6) PAGINATION                                                        #}
 {# ════════════════════════════════════════════════════════════════════ #}
 
-{% macro pagination_controls(p) %}
+{% macro pagination_controls(p, request_args) %}
+    {# Build a query string of all non-page params, used by every link #}
+    {% set keep = [] %}
+    {% for k, v in request_args.items() %}
+        {% if k != 'page' and v %}
+            {% set _ = keep.append(k ~ '=' ~ v) %}
+        {% endif %}
+    {% endfor %}
+    {% set qs_base = '&' ~ keep|join('&') if keep else '' %}
+
     <div class="pagination-wrap">
         <div class="pagination-info">
             <span><strong>{{ p.start_row }}-{{ p.end_row }}</strong> / <strong>{{ p.total }}</strong> хэрэг</span>
@@ -463,13 +480,13 @@
         </div>
         <div class="pagination-nav">
             {% if p.has_prev %}
-                <a href="?page={{ p.prev_page }}" class="pg-btn pg-prev">← Өмнөх</a>
+                <a href="?page={{ p.prev_page }}{{ qs_base }}" class="pg-btn pg-prev">← Өмнөх</a>
             {% else %}
                 <span class="pg-btn pg-prev pg-disabled">← Өмнөх</span>
             {% endif %}
             <div class="pg-pages">
                 {% if p.page > 3 %}
-                    <a href="?page=1" class="pg-num">1</a>
+                    <a href="?page=1{{ qs_base }}" class="pg-num">1</a>
                     {% if p.page > 4 %}<span class="pg-ellipsis">…</span>{% endif %}
                 {% endif %}
                 {% for n in range(p.page - 2, p.page + 3) %}
@@ -477,17 +494,17 @@
                         {% if n == p.page %}
                             <span class="pg-num pg-active">{{ n }}</span>
                         {% else %}
-                            <a href="?page={{ n }}" class="pg-num">{{ n }}</a>
+                            <a href="?page={{ n }}{{ qs_base }}" class="pg-num">{{ n }}</a>
                         {% endif %}
                     {% endif %}
                 {% endfor %}
                 {% if p.page < p.total_pages - 2 %}
                     {% if p.page < p.total_pages - 3 %}<span class="pg-ellipsis">…</span>{% endif %}
-                    <a href="?page={{ p.total_pages }}" class="pg-num">{{ p.total_pages }}</a>
+                    <a href="?page={{ p.total_pages }}{{ qs_base }}" class="pg-num">{{ p.total_pages }}</a>
                 {% endif %}
             </div>
             {% if p.has_next %}
-                <a href="?page={{ p.next_page }}" class="pg-btn pg-next">Дараах →</a>
+                <a href="?page={{ p.next_page }}{{ qs_base }}" class="pg-btn pg-next">Дараах →</a>
             {% else %}
                 <span class="pg-btn pg-next pg-disabled">Дараах →</span>
             {% endif %}
@@ -498,7 +515,7 @@
             <button onclick="
                 var v = document.getElementById('pg-jump-input').value;
                 if (v >= 1 && v <= {{ p.total_pages }}) {
-                    window.location = '?page=' + v;
+                    window.location = '?page=' + v + '{{ qs_base|safe }}';
                 }
             ">Очих</button>
         </div>
@@ -506,7 +523,7 @@
 {% endmacro %}
 
 {% if pagination.total_pages > 1 %}
-    {{ pagination_controls(pagination) }}
+    {{ pagination_controls(pagination, request_args) }}
 {% endif %}
 
 {% endblock %}

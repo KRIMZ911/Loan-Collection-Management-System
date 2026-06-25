@@ -506,14 +506,52 @@ class AnnualGoal(db.Model):
     updated_by = db.relationship("User", foreign_keys=[updated_by_user_id])      # 🆕
     deleted_by = db.relationship("User", foreign_keys=[deleted_by_user_id])      # 🆕
 
-    # One goal per (year, branch, category)
+    # Only ONE non-deleted goal per (year, branch, category).
+    # Soft-deleted rows (deleted_at IS NOT NULL) are exempt from uniqueness
+    # so the audit trail can preserve old deleted goals + new ones.
     __table_args__ = (
-        db.UniqueConstraint("year", "branch_id", "category_id",
-                            name="uq_annual_goal_per_branch"),
+        db.Index(
+            "uq_active_goal_per_branch",
+            "year", "branch_id", "category_id",
+            unique=True,
+            sqlite_where=db.text("deleted_at IS NULL"),
+        ),
     )
 
     def __repr__(self):
         return f"<AnnualGoal {self.year} branch={self.branch_id} cat={self.category_id}>"
+
+
+# ============================================================================
+# MODELS — User Widget Preferences (NEW for Phase I)
+# ============================================================================
+
+class UserWidgetPreference(db.Model):
+    """
+    Хэрэглэгчийн виджет тохиргоо — Per-user customization for the
+    home dashboard. One row per (user, widget_id) combo.
+    """
+    __tablename__ = "user_widget_preferences"
+
+    id           = db.Column(db.Integer, primary_key=True)
+    user_id      = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    widget_id    = db.Column(db.String(60), nullable=False)
+    sort_order   = db.Column(db.Integer, default=0)
+    is_enabled   = db.Column(db.Boolean, default=True)
+
+    created_at   = db.Column(db.DateTime, default=_utcnow)
+    updated_at   = db.Column(db.DateTime, default=_utcnow, onupdate=_utcnow)
+
+    # Relationships
+    user         = db.relationship("User")
+
+    # Unique: one preference row per (user, widget)
+    __table_args__ = (
+        db.UniqueConstraint("user_id", "widget_id", name="uq_user_widget"),
+    )
+
+    def __repr__(self):
+        return f"<UserWidgetPreference user={self.user_id} widget={self.widget_id}>"
 
 class LoanProduct(db.Model):
     """Бүтээгдэхүүний төрөл"""

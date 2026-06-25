@@ -55,6 +55,7 @@ PER_PAGE = 50
 
 def get_base_context(active_dashboard=None):
     """Shared template context — pulled from the logged-in user."""
+    from app.services.access_control import can
     user = current_user()
     return {
         "user":               user,
@@ -64,6 +65,7 @@ def get_base_context(active_dashboard=None):
         "active_dashboard":   active_dashboard,
         "user_dashboards":    _menu_items_for(user),
         "risk_levels":        RISK_LEVELS,
+        "has_admin_access":   can(user, "can_set_branch_goals") if user else False,
     }
 
 
@@ -220,6 +222,7 @@ def dashboard(dashboard_type):
     "regional": _build_regional,
     "branch":   _build_branch,         # ← renamed key
     "loans":    _build_loans,
+    "home":     _build_home,
     }
     builder = builders.get(dashboard_type)
     if builder is None:
@@ -474,15 +477,157 @@ def _build_branch():
     })
     return render_template("dashboard/branch.html", **ctx)
 
+@require_dashboard("bank")
 def _build_bank():
-    """Stub — Phase F (optional) will build this."""
+    """
+    Bank dashboard — executive bank-wide overview.
+
+    Sections:
+      1. KPI strip (3 mega tiles)
+      2. Bank-wide goal aggregate (3 categories)
+      3. Regions comparison table
+      4. 6-month delinquency trend (SVG sparkline)
+    """
+    from app.services.bank_stats import get_all_bank_widgets
+
     user = current_user()
-    back = url_for("dashboard.menu") if len(get_dashboards(user)) > 1 \
-           else url_for("auth.logout")
-    return render_template_string(
-        _STUB_TEMPLATE,
-        icon="🏦",
-        title="Банкны нэгтгэл",
-        message="Энэ дашбоард удахгүй нэмэгдэнэ. (Phase F)",
-        back_url=back,
+
+    # Pull all widget data in one call
+    widgets = get_all_bank_widgets(user, months_back=6)
+
+    # Compute strip KPIs from widgets we already fetched
+    total_branches = sum(r["branch_count"] for r in widgets["regions_comparison"])
+    total_cases    = sum(r["total_cases"]  for r in widgets["regions_comparison"])
+    total_overdue  = sum(r["total_overdue_amount"] for r in widgets["regions_comparison"])
+
+    # Build sparkline data (just delinquent_count list)
+    trend_counts = [m["delinquent_count"] for m in widgets["delinquency_trend"]]
+    trend_max    = max(trend_counts) if trend_counts else 1
+    if trend_max == 0:
+        trend_max = 1   # Avoid divide-by-zero
+
+    ctx = get_base_context(active_dashboard="bank")
+    ctx.update({
+        "dashboard_meta":   DASHBOARD_CATALOG.get("bank", {}),
+        "scope_label":      get_scope_label(user),
+        "show_back_button": len(get_dashboards(user)) > 1,
+        # data
+        "goals":            widgets["goals_aggregate"],
+        "regions":          widgets["regions_comparison"],
+        "trend":            widgets["delinquency_trend"],
+        "trend_max":        trend_max,
+        # top KPIs
+        "total_branches":   total_branches,
+        "total_cases":      total_cases,
+        "total_overdue":    total_overdue,
+    })
+    return render_template("dashboard/bank.html", **ctx)
+
+
+
+
+@require_dashboard("home")
+def _build_home():
+    """
+    Home dashboard — personalized widget grid.
+
+    Each user sees widgets they enabled (or role defaults if no prefs set).
+    Widgets render with their declared size (narrow/wide × short/tall) in
+    a CSS Grid with auto-flow dense packing.
+    """
+    from app.services.widget_catalog import get_user_widgets, render_widget_data
+
+    user = current_user()
+
+    # Get user's chosen widgets (or defaults if none set)
+    user_widgets = get_user_widgets(user)
+
+    # Render data for each widget
+    rendered_widgets = []
+    for w in user_widgets:
+        data = render_widget_data(user, w)
+        # Skip widgets that errored — don't break the whole page
+        if data is None:
+            continue
+        rendered_widgets.append({
+            "meta": w,           # widget catalog metadata
+            "data": data,        # the actual data to display
+        })
+
+    ctx = get_base_context(active_dashboard="home")
+    ctx.update({
+        "dashboard_meta":   DASHBOARD_CATALOG.get("home", {}),
+        "scope_label":      get_scope_label(user),
+        "show_back_button": len(get_dashboards(user)) > 1,
+        "rendered_widgets": rendered_widgets,
+        "has_widgets":      len(rendered_widgets) > 0,
+    })
+    return render_template("dashboard/home.html", **ctx)
+
+
+
+@dashboard_bp.route("/dashboard/home/settings", methods=["GET", "POST"])
+@require_dashboard("home")
+def home_settings():
+    """
+    Widget settings page — toggle widgets on/off, reorder them.
+    
+    POST submits a list of widget_ids in the order the user wants.
+    GET renders the form with current preferences pre-filled.
+    """
+    from app.services.widget_catalog import (
+        get_available_widgets,
+        get_user_widgets,
+        save_user_widgets,
     )
+    from flask import flash
+
+    user = current_user()
+
+    if request.method == "POST":
+        # Form submits widget_ids in order (hidden input list)
+        widget_ids_in_order = request.form.getlist("widget_order")
+        save_user_widgets(user, widget_ids_in_order)
+        flash("✅ Виджет тохиргоо хадгалагдлаа.", "success")
+        return redirect(url_for("dashboard.dashboard", dashboard_type="home"))
+
+    # GET — render the settings form
+    available = get_available_widgets(user)
+    current = get_user_widgets(user)
+    current_ids = [w["widget_id"] for w in current]
+
+    # Split into enabled (in user's order) and disabled (rest)
+    enabled_widgets = []
+    for wid in current_ids:
+        for w in available:
+            if w["widget_id"] == wid:
+                enabled_widgets.append(w)
+                break
+
+    enabled_ids_set = set(current_ids)
+    disabled_widgets = [w for w in available if w["widget_id"] not in enabled_ids_set]
+
+    ctx = get_base_context(active_dashboard="home")
+    ctx.update({
+        "dashboard_meta":   DASHBOARD_CATALOG.get("home", {}),
+        "scope_label":      get_scope_label(user),
+        "show_back_button": len(get_dashboards(user)) > 1,
+        "enabled_widgets":  enabled_widgets,
+        "disabled_widgets": disabled_widgets,
+        "total_available":  len(available),
+    })
+    return render_template("dashboard/home_settings.html", **ctx)
+
+
+@dashboard_bp.route("/dashboard/home/reset", methods=["POST"])
+@require_dashboard("home")
+def home_reset():
+    """Reset user's widget preferences to role defaults."""
+    from app.services.widget_catalog import get_default_widgets_for_user, save_user_widgets
+    from flask import flash
+
+    user = current_user()
+    defaults = get_default_widgets_for_user(user)
+    save_user_widgets(user, defaults)
+    flash("✅ Хэвийн тохиргоо сэргээгдлээ.", "success")
+    return redirect(url_for("dashboard.home_settings"))

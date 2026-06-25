@@ -239,9 +239,16 @@
         </div>
         {% endif %}
     </div>
-    {% if show_back_button %}
-        <a href="{{ url_for('dashboard.menu') }}" class="back-to-menu">← Цэс рүү</a>
-    {% endif %}
+    <div style="display: flex; gap: 8px; align-items: center;">
+        {% if has_admin_access %}
+            <a href="{{ url_for('admin.index') }}" class="back-to-menu" title="Удирдлагын самбар">
+                ⚙ Тохиргоо
+            </a>
+        {% endif %}
+        {% if show_back_button %}
+            <a href="{{ url_for('dashboard.menu') }}" class="back-to-menu">← Цэс рүү</a>
+        {% endif %}
+    </div>
 </div>
 
 {# ════════════════════════════════════════════════════════════════════ #}
@@ -289,8 +296,8 @@
 <div class="section-title">
     <span>🎯 {{ "{}".format(goals[0].pace_status.days_total if goals else 365) }} ОНЫ ЗОРИЛТ</span>
     {% if can_edit_goals %}
-        <a href="{{ url_for('dashboard.dashboard', dashboard_type='branch') }}?branch_id={{ current_branch_id }}#edit-goals"
-           class="edit-goals-btn">✏️ Зорилт засах</a>
+    <a href="{{ url_for('admin.goals_list') }}?branch_id={{ current_branch_id }}"
+       class="edit-goals-btn">✏️ Зорилт засах</a>
     {% endif %}
 </div>
 
@@ -332,8 +339,8 @@
                 </div>
                 {% if can_edit_goals %}
                     <div style="text-align: center;">
-                        <a href="{{ url_for('dashboard.dashboard', dashboard_type='branch') }}?branch_id={{ current_branch_id }}#add-goal"
-                           class="add-goal-link">Зорилт нэмэх →</a>
+                        <a href="{{ url_for('admin.goal_new') }}?branch_id={{ current_branch_id }}"
+                        class="add-goal-link">Зорилт нэмэх →</a>
                     </div>
                 {% endif %}
             {% endif %}
