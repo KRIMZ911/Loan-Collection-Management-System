@@ -1031,74 +1031,83 @@ def seed_actions_and_extras(loans, users):
 
 def seed():
     """Run all seeders in order."""
-    print("\n" + "=" * 60)
-    print("🌱 SEEDING DATABASE (UPDATED with new fields)")
-    print("=" * 60)
+    # 🆕 Phase J.1 — Suppress audit logging during seed
+    from app.services.audit_log import disable_audit, enable_audit
+    disable_audit()
 
-    print("\n📦 Reference data...")
-    segments = seed_segments()
-    regions = seed_regions(segments)
-    branches = seed_branches(regions)
-    roles = seed_roles()
-    users = seed_users(roles, branches)
-    products = seed_loan_products(segments)
-    seed_source_systems()
-    seed_escalation_rules()
-    categories = seed_goal_categories()
-    seed_annual_goals(branches, categories, users)
+    try:
+        print("\n" + "=" * 60)
+        print("🌱 SEEDING DATABASE (UPDATED with new fields)")
+        print("=" * 60)
 
-    print("\n📦 Core data...")
-    borrowers, loans = seed_borrowers_and_loans(branches, products, users, segments)
+        print("\n📦 Reference data...")
+        segments = seed_segments()
+        regions = seed_regions(segments)
+        branches = seed_branches(regions)
+        roles = seed_roles()
+        users = seed_users(roles, branches)
+        products = seed_loan_products(segments)
+        seed_source_systems()
+        seed_escalation_rules()
+        categories = seed_goal_categories()
+        seed_annual_goals(branches, categories, users)
 
-    print("\n📦 Deposit accounts (NEW)...")
-    seed_deposit_accounts(borrowers)
+        print("\n📦 Core data...")
+        borrowers, loans = seed_borrowers_and_loans(branches, products, users, segments)
 
-    print("\n📦 Activity data...")
-    seed_contact_logs(loans, users)
-    seed_delinquency_history(loans)
-    seed_actions_and_extras(loans, users)
+        print("\n📦 Deposit accounts (NEW)...")
+        seed_deposit_accounts(borrowers)
 
-    db.session.commit()
+        print("\n📦 Activity data...")
+        seed_contact_logs(loans, users)
+        seed_delinquency_history(loans)
+        seed_actions_and_extras(loans, users)
 
-    print("\n" + "=" * 60)
-    print("✅ DATABASE SEEDED SUCCESSFULLY!")
-    print("=" * 60)
+        db.session.commit()
 
-    print(f"\n📊 Summary:")
-    print(f"   Segments:        {Segment.query.count()}")
-    print(f"   Regions:         {Region.query.count()}")
-    print(f"   Branches:        {Branch.query.count()}")
-    print(f"   Roles:           {Role.query.count()}")
-    print(f"   Users:           {User.query.count()}")
-    print(f"   Loan Products:   {LoanProduct.query.count()}")
-    print(f"   Source Systems:  {SourceSystem.query.count()}")
-    print(f"   Esc. Rules:      {EscalationRule.query.count()}")
-    print(f"   Borrowers:       {Borrower.query.count()}")
-    print(f"   Loans:           {Loan.query.count()}")
-    print(f"   Collaterals:     {Collateral.query.count()}")
-    print(f"   Deposit Accts:   {DepositAccount.query.count()}  🆕")
-    print(f"   Contact Logs:    {ContactLog.query.count()}")
-    print(f"   History Snaps:   {DelinquencyHistory.query.count()}")
-    print(f"   Actions:         {ActionTaken.query.count()}")
-    print(f"   Transfers:       {CaseTransfer.query.count()}")
-    print(f"   Outsourcing:     {OutsourcingAssignment.query.count()}")
-    print(f"   Committee:       {CommitteeReview.query.count()}")
-    print(f"   Goal Categories: {GoalCategory.query.count()}")
-    print(f"   Annual Goals:    {AnnualGoal.query.count()}")
+        print("\n" + "=" * 60)
+        print("✅ DATABASE SEEDED SUCCESSFULLY!")
+        print("=" * 60)
 
-    print(f"   ─────────────────────────")
-    total = sum([
-        Segment.query.count(), Region.query.count(), Branch.query.count(),
-        Role.query.count(), User.query.count(), LoanProduct.query.count(),
-        SourceSystem.query.count(), EscalationRule.query.count(),
-        Borrower.query.count(), Loan.query.count(), Collateral.query.count(),
-        DepositAccount.query.count(),
-        ContactLog.query.count(), DelinquencyHistory.query.count(),
-        ActionTaken.query.count(), CaseTransfer.query.count(),
-        OutsourcingAssignment.query.count(), CommitteeReview.query.count(),
-    ])
-    print(f"   Total records:   {total}")
+        print(f"\n📊 Summary:")
+        print(f"   Segments:        {Segment.query.count()}")
+        print(f"   Regions:         {Region.query.count()}")
+        print(f"   Branches:        {Branch.query.count()}")
+        print(f"   Roles:           {Role.query.count()}")
+        print(f"   Users:           {User.query.count()}")
+        print(f"   Loan Products:   {LoanProduct.query.count()}")
+        print(f"   Source Systems:  {SourceSystem.query.count()}")
+        print(f"   Esc. Rules:      {EscalationRule.query.count()}")
+        print(f"   Borrowers:       {Borrower.query.count()}")
+        print(f"   Loans:           {Loan.query.count()}")
+        print(f"   Collaterals:     {Collateral.query.count()}")
+        print(f"   Deposit Accts:   {DepositAccount.query.count()}  🆕")
+        print(f"   Contact Logs:    {ContactLog.query.count()}")
+        print(f"   History Snaps:   {DelinquencyHistory.query.count()}")
+        print(f"   Actions:         {ActionTaken.query.count()}")
+        print(f"   Transfers:       {CaseTransfer.query.count()}")
+        print(f"   Outsourcing:     {OutsourcingAssignment.query.count()}")
+        print(f"   Committee:       {CommitteeReview.query.count()}")
+        print(f"   Goal Categories: {GoalCategory.query.count()}")
+        print(f"   Annual Goals:    {AnnualGoal.query.count()}")
 
+        print(f"   ─────────────────────────")
+        total = sum([
+            Segment.query.count(), Region.query.count(), Branch.query.count(),
+            Role.query.count(), User.query.count(), LoanProduct.query.count(),
+            SourceSystem.query.count(), EscalationRule.query.count(),
+            Borrower.query.count(), Loan.query.count(), Collateral.query.count(),
+            DepositAccount.query.count(),
+            ContactLog.query.count(), DelinquencyHistory.query.count(),
+            ActionTaken.query.count(), CaseTransfer.query.count(),
+            OutsourcingAssignment.query.count(), CommitteeReview.query.count(),
+        ])
+        print(f"   Total records:   {total}")
+
+    finally:
+        # 🆕 Always turn audit back on, even if seeding crashed
+        enable_audit()
+        print("\n🔒 Audit logging re-enabled.")
 
 # ============================================================================
 # ENTRY POINT

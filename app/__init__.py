@@ -13,7 +13,6 @@ def create_app(config_class=Config):
     app.config.from_object(config_class)
 
     db.init_app(app)
-
     
     from app.routes.auth import auth_bp
     from app.routes.dashboard import dashboard_bp
@@ -27,5 +26,10 @@ def create_app(config_class=Config):
     with app.app_context():
         from app import models
         db.create_all()
+        
+        #🆕 Phase J.1 — Audit log auto-writers
+        from app.services.audit_log import register_audit_listeners
+        register_audit_listeners()
+
 
     return app

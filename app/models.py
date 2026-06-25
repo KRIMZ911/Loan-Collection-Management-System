@@ -394,6 +394,8 @@ class User(db.Model):
     region = db.relationship("Region", back_populates="users")
     segment = db.relationship("Segment")
 
+    password_hash = db.Column(db.String(255), nullable=True)
+
     def to_dict(self):
         return {
             "id": self.id,
@@ -566,6 +568,9 @@ class LoanProduct(db.Model):
 
     segment = db.relationship("Segment", back_populates="loan_products")
     loans = db.relationship("Loan", back_populates="loan_product", lazy="dynamic")
+    
+    is_active   = db.Column(db.Boolean, default=True, nullable=False)
+    description = db.Column(db.Text, nullable=True)
 
     def to_dict(self):
         return {

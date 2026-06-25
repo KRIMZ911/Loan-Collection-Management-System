@@ -203,6 +203,7 @@ ROLE_ACCESS: Dict[str, Dict[str, Any]] = {
         "can_assign_cases":  True,
         "can_export":        True,
         "can_set_worker_goals": True,
+        "can_manage_users":    True,
     },
 
     # ─── REGIONAL DIRECTOR — three dashboards, own region ─────────────────
@@ -216,6 +217,8 @@ ROLE_ACCESS: Dict[str, Dict[str, Any]] = {
         "can_assign_cases":            True,
         "can_export":                  True,
         "can_set_branch_goals":       True,
+        "can_manage_users":      True,    # ← NEW (scope: own region)
+        "can_view_audit_log":    True,    # ← NEW        
     },
 
     # ─── HQ PROCESS CONTROL (БПҮХ) — retail loans, bank-wide ──────────────
@@ -235,7 +238,12 @@ ROLE_ACCESS: Dict[str, Dict[str, Any]] = {
         **_hq_specialist(),
         "can_assign_cases":  True,
     },
-    "lawyer":                _hq_specialist(),
+    
+    "lawyer": {
+        **_hq_specialist(),
+        "can_view_audit_log":  True,    # ← NEW (read-only, for court cases)
+    },
+
     "insurance_specialist":  _hq_specialist(),
 
     # ─── COMMITTEE SECRETARY ──────────────────────────────────────────────
@@ -246,7 +254,11 @@ ROLE_ACCESS: Dict[str, Dict[str, Any]] = {
     "senior_analyst":        _hq_specialist(),
     "property_valuator":     _hq_specialist(),
     "aml_analyst":           _hq_specialist(),
-    "compliance":            _hq_specialist(),
+    "compliance": {
+        **_hq_specialist(),
+        "can_view_audit_log":  True,    # ← NEW (compliance role - they should see this)
+    },
+
     "finance_control":       _hq_specialist(),
 
     # Risk dept director — gets branches dashboard too for oversight
@@ -259,6 +271,7 @@ ROLE_ACCESS: Dict[str, Dict[str, Any]] = {
         "can_see_employee_performance": True,
         "can_assign_cases":            True,
         "can_export":                  True,
+        "can_view_audit_log":  True, 
     },
 
     # ─── OUTSOURCING — masked PII, scoped to assignments ──────────────────
@@ -286,7 +299,11 @@ ROLE_ACCESS: Dict[str, Dict[str, Any]] = {
         "can_assign_cases":            False,
         "can_export":                  True,
         "can_set_branch_goals":        True,     # ← NEW
-        "can_set_worker_goals":        True,     # ← NEW
+        "can_set_worker_goals":        True,     # ← NEW       
+        "can_manage_users":             True,    # ← NEW
+        "can_manage_products":          True,    # ← NEW
+        "can_view_audit_log":           True,    # ← NEW
+
 
     },
 }
@@ -304,7 +321,9 @@ _NO_ACCESS: Dict[str, Any] = {
     "can_export":                  False,
     "can_set_branch_goals":        False,    # ← NEW
     "can_set_worker_goals":        False,    # ← NEW
-
+    "can_manage_users":      False,    # ← NEW
+    "can_manage_products":   False,    # ← NEW
+    "can_view_audit_log":    False,    # ← NEW
 }
 
 
