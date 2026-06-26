@@ -298,7 +298,10 @@ ROLE_ACCESS: Dict[str, Dict[str, Any]] = {
         "can_see_employee_performance": True,
         "can_assign_cases":            False,
         "can_export":                  True,
-        "can_set_branch_goals":        True,     # ← NEW
+                
+        "can_set_branch_goals": True,
+        "can_manage_products": True,
+
         "can_set_worker_goals":        True,     # ← NEW       
         "can_manage_users":             True,    # ← NEW
         "can_manage_products":          True,    # ← NEW

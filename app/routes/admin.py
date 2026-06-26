@@ -22,7 +22,7 @@ from flask import (
 )
 from app import db
 from app.models import (
-    AnnualGoal, GoalCategory, Branch, User,
+    AnnualGoal, GoalCategory, Branch, User, LoanProduct, Segment,
 )
 from app.services.access_control import (
     current_user, scope_branches,
@@ -113,6 +113,15 @@ def index():
             "url":     url_for("admin.goals_list"),
             "color":   "#2563EB",
         })
+
+    if can(user, "can_manage_products"):
+        sections.append({
+            "icon":    "📦",
+            "title":   "Бүтээгдэхүүн удирдах",
+            "sub":     "Зээлийн бүтээгдэхүүн нэмэх, засах",
+            "url":     url_for("admin.products_list"),
+            "color":   "#7C3AED",
+    })
 
     if not sections:
         # User has no admin access at all
@@ -467,3 +476,176 @@ def goal_delete(goal_id):
     ctx = _admin_context(active_section="goals")
     ctx["goal"] = goal
     return render_template("admin/goal_delete_confirm.html", **ctx)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# LOAN PRODUCTS ADMIN (Phase J.2)
+# ════════════════════════════════════════════════════════════════════════════
+
+def _get_segments_for_dropdown():
+    """All segments for use in dropdowns."""
+    return Segment.query.order_by(Segment.id).all()
+
+
+@admin_bp.route("/products")
+@require_capability("can_manage_products")
+def products_list():
+    """List all loan products with filters."""
+    # Filter params
+    filter_segment_id = request.args.get("segment_id", type=int)
+    filter_active = request.args.get("active", "all")  # all / active / retired
+
+    q = LoanProduct.query
+
+    if filter_segment_id:
+        q = q.filter(LoanProduct.segment_id == filter_segment_id)
+    if filter_active == "active":
+        q = q.filter(LoanProduct.is_active == True)
+    elif filter_active == "retired":
+        q = q.filter(LoanProduct.is_active == False)
+
+    products = q.order_by(LoanProduct.is_active.desc(),
+                          LoanProduct.category,
+                          LoanProduct.name).all()
+
+    segments = _get_segments_for_dropdown()
+
+    ctx = _admin_context(active_section="products")
+    ctx.update({
+        "products":          products,
+        "segments":          segments,
+        "filter_segment_id": filter_segment_id,
+        "filter_active":     filter_active,
+    })
+    return render_template("admin/products_list.html", **ctx)
+
+
+@admin_bp.route("/products/new", methods=["GET", "POST"])
+@require_capability("can_manage_products")
+def product_new():
+    """Create a new loan product."""
+    user = current_user()
+    segments = _get_segments_for_dropdown()
+
+    if request.method == "POST":
+        try:
+            name = request.form["name"].strip()
+            category = request.form["category"].strip()
+            segment_id = int(request.form["segment_id"])
+        except (KeyError, ValueError):
+            flash("Бүх талбарыг бөглөнө үү.", "error")
+            return _render_product_form("new", segments=segments)
+
+        if not name or not category:
+            flash("Нэр болон ангилал хоосон байж болохгүй.", "error")
+            return _render_product_form("new", segments=segments)
+
+        description = request.form.get("description", "").strip() or None
+        is_digital = bool(request.form.get("is_digital"))
+        auto_sms_day = request.form.get("auto_sms_day", "").strip()
+        auto_sms_day = int(auto_sms_day) if auto_sms_day.isdigit() else None
+
+        product = LoanProduct(
+            name=name,
+            category=category,
+            segment_id=segment_id,
+            description=description,
+            is_digital=is_digital,
+            auto_sms_day=auto_sms_day,
+            is_active=True,
+        )
+        db.session.add(product)
+        db.session.commit()
+        flash(f"✅ '{name}' бүтээгдэхүүн амжилттай үүсгэлээ.", "success")
+        return redirect(url_for("admin.products_list"))
+
+    return _render_product_form("new", segments=segments)
+
+
+@admin_bp.route("/products/<int:product_id>/edit", methods=["GET", "POST"])
+@require_capability("can_manage_products")
+def product_edit(product_id):
+    """Edit an existing loan product."""
+    user = current_user()
+    product = LoanProduct.query.get_or_404(product_id)
+    segments = _get_segments_for_dropdown()
+
+    if request.method == "POST":
+        try:
+            name = request.form["name"].strip()
+            category = request.form["category"].strip()
+            segment_id = int(request.form["segment_id"])
+        except (KeyError, ValueError):
+            flash("Бүх талбарыг бөглөнө үү.", "error")
+            return _render_product_form("edit", product=product, segments=segments)
+
+        if not name or not category:
+            flash("Нэр болон ангилал хоосон байж болохгүй.", "error")
+            return _render_product_form("edit", product=product, segments=segments)
+
+        # Update
+        product.name = name
+        product.category = category
+        product.segment_id = segment_id
+        product.description = request.form.get("description", "").strip() or None
+        product.is_digital = bool(request.form.get("is_digital"))
+
+        auto_sms_day = request.form.get("auto_sms_day", "").strip()
+        product.auto_sms_day = int(auto_sms_day) if auto_sms_day.isdigit() else None
+
+        db.session.commit()
+        flash(f"✅ '{name}' бүтээгдэхүүн шинэчлэгдлээ.", "success")
+        return redirect(url_for("admin.products_list"))
+
+    return _render_product_form("edit", product=product, segments=segments)
+
+
+@admin_bp.route("/products/<int:product_id>/retire", methods=["GET", "POST"])
+@require_capability("can_manage_products")
+def product_retire(product_id):
+    """Retire (soft-delete) a loan product."""
+    user = current_user()
+    product = LoanProduct.query.get_or_404(product_id)
+
+    if not product.is_active:
+        flash("Энэ бүтээгдэхүүн аль хэдийн идэвхгүй болсон байна.", "warning")
+        return redirect(url_for("admin.products_list"))
+
+    if request.method == "POST":
+        product.is_active = False
+        db.session.commit()
+        flash(f"📦 '{product.name}' бүтээгдэхүүнийг идэвхгүй болголоо.", "warning")
+        return redirect(url_for("admin.products_list"))
+
+    ctx = _admin_context(active_section="products")
+    ctx["product"] = product
+    return render_template("admin/product_retire_confirm.html", **ctx)
+
+
+@admin_bp.route("/products/<int:product_id>/restore", methods=["POST"])
+@require_capability("can_manage_products")
+def product_restore(product_id):
+    """Re-activate a retired product."""
+    user = current_user()
+    product = LoanProduct.query.get_or_404(product_id)
+    product.is_active = True
+    db.session.commit()
+    flash(f"✅ '{product.name}' бүтээгдэхүүн дахин идэвхтэй боллоо.", "success")
+    return redirect(url_for("admin.products_list"))
+
+
+def _render_product_form(mode, product=None, segments=None):
+    """Internal helper to render the product form (new or edit)."""
+    if segments is None:
+        segments = _get_segments_for_dropdown()
+    ctx = _admin_context(active_section="products")
+    ctx.update({
+        "mode":        mode,
+        "form_action": url_for("admin.product_new") if mode == "new"
+                       else url_for("admin.product_edit", product_id=product.id),
+        "product":     product,
+        "segments":    segments,
+        # Common categories suggestion list
+        "category_suggestions": ["Хэрэглээ", "Бизнес", "Карт", "Ипотек", "Авто"],
+    })
+    return render_template("admin/product_form.html", **ctx)

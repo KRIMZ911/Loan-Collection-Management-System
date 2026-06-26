@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+{% block content %}
+
+<style>
+    .admin-header {
+        display: flex; justify-content: space-between; align-items: center;
+        gap: 16px; padding: 20px 24px; background: white;
+        border-radius: 12px; margin-bottom: 16px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .admin-header-left { display: flex; align-items: center; gap: 16px; }
+    .admin-title-icon { font-size: 32px; }
+    .admin-title h1 { margin: 0; font-size: 22px; font-weight: 700; color: #0F172A; }
+    .admin-title .subtitle { font-size: 13px; color: #64748B; margin-top: 2px; }
+    .back-btn {
+        display: inline-flex; padding: 8px 14px; background: white;
+        border: 1px solid #E2E8F0; border-radius: 8px; color: #475569;
+        text-decoration: none; font-size: 13px; font-weight: 500;
+    }
+    .back-btn:hover { background: #F8FAFC; }
+
+    .flash-messages { margin-bottom: 16px; }
+    .flash-msg { padding: 12px 16px; border-radius: 8px; margin-bottom: 8px; font-size: 14px; }
+    .flash-error { background: #FEE2E2; color: #991B1B; border: 1px solid #FECACA; }
+
+    .form-card {
+        background: white; border-radius: 12px; padding: 24px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06); max-width: 720px;
+    }
+    .form-row { margin-bottom: 16px; }
+    .form-row label {
+        display: block; font-size: 12px; color: #334155; font-weight: 600;
+        margin-bottom: 6px;
+    }
+    .form-row input, .form-row select, .form-row textarea {
+        width: 100%; padding: 10px 12px; font-size: 14px;
+        border: 1px solid #E2E8F0; border-radius: 8px; box-sizing: border-box;
+    }
+    .form-row input:focus, .form-row select:focus, .form-row textarea:focus {
+        outline: none; border-color: #2563EB;
+    }
+    .form-row .help { font-size: 11px; color: #64748B; margin-top: 4px; }
+    .form-row .checkbox-row {
+        display: flex; align-items: center; gap: 8px;
+    }
+    .form-row .checkbox-row input { width: auto; }
+    .form-actions {
+        display: flex; gap: 8px; margin-top: 24px;
+        padding-top: 16px; border-top: 1px solid #F1F5F9;
+    }
+    .btn-primary {
+        padding: 10px 20px; background: #7C3AED; color: white;
+        border: none; border-radius: 8px;
+        font-size: 14px; font-weight: 600; cursor: pointer;
+    }
+    .btn-primary:hover { background: #6D28D9; }
+    .btn-secondary {
+        padding: 10px 20px; background: white; color: #475569;
+        border: 1px solid #E2E8F0; border-radius: 8px;
+        font-size: 14px; font-weight: 500;
+        text-decoration: none; display: inline-block;
+    }
+    .btn-secondary:hover { background: #F8FAFC; }
+</style>
+
+<div class="admin-header">
+    <div class="admin-header-left">
+        <span class="admin-title-icon">{% if mode == "new" %}📦{% else %}✏{% endif %}</span>
+        <div class="admin-title">
+            <h1>{% if mode == "new" %}Шинэ бүтээгдэхүүн нэмэх{% else %}Бүтээгдэхүүн засах{% endif %}</h1>
+            <div class="subtitle">⚙ Удирдлага → 📦 Бүтээгдэхүүн → {% if mode == "new" %}Шинэ{% else %}Засварлах{% endif %}</div>
+        </div>
+    </div>
+    <a href="{{ url_for('admin.products_list') }}" class="back-btn">← Жагсаалт руу</a>
+</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        <div class="flash-messages">
+            {% for category, message in messages %}
+                <div class="flash-msg flash-{{ category }}">{{ message }}</div>
+            {% endfor %}
+        </div>
+    {% endif %}
+{% endwith %}
+
+<form method="POST" action="{{ form_action }}" class="form-card">
+
+    <div class="form-row">
+        <label>Бүтээгдэхүүний нэр</label>
+        <input type="text" name="name" required
+               value="{{ product.name if mode == 'edit' else '' }}"
+               placeholder="Жишээ: Цалингийн зээл">
+    </div>
+
+    <div class="form-row">
+        <label>Ангилал</label>
+        <input type="text" name="category" required list="category-list"
+               value="{{ product.category if mode == 'edit' else '' }}"
+               placeholder="Жишээ: Хэрэглээ">
+        <datalist id="category-list">
+            {% for c in category_suggestions %}
+                <option value="{{ c }}">
+            {% endfor %}
+        </datalist>
+        <div class="help">Шинэ ангилал бичих, эсвэл одоо байгаагаас сонгох</div>
+    </div>
+
+    <div class="form-row">
+        <label>Сегмент</label>
+        <select name="segment_id" required>
+            <option value="">— Сонгох —</option>
+            {% for s in segments %}
+                <option value="{{ s.id }}"
+                        {% if mode == 'edit' and product.segment_id == s.id %}selected{% endif %}>
+                    {{ s.name }}
+                </option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div class="form-row">
+        <label>Тайлбар (заавал биш)</label>
+        <textarea name="description" rows="3"
+                  placeholder="Бүтээгдэхүүний дэлгэрэнгүй тайлбар…">{{ product.description if mode == 'edit' and product.description else '' }}</textarea>
+    </div>
+
+    <div class="form-row">
+        <label>Шинж чанарууд</label>
+        <div class="checkbox-row">
+            <input type="checkbox" name="is_digital" id="is_digital"
+                   {% if mode == 'edit' and product.is_digital %}checked{% endif %}>
+            <label for="is_digital" style="margin: 0; font-weight: 500;">
+                Цахим бүтээгдэхүүн (Shoppy.mn, Sain г.м)
+            </label>
+        </div>
+    </div>
+
+    <div class="form-row">
+        <label>Авто-SMS өдөр (заавал биш)</label>
+        <input type="number" name="auto_sms_day" min="1" max="30"
+               value="{{ product.auto_sms_day if mode == 'edit' and product.auto_sms_day else '' }}"
+               placeholder="Жишээ: 5">
+        <div class="help">Хэдэн дэх өдөр автомат SMS илгээх (цахим зээлд тохиромжтой)</div>
+    </div>
+
+    <div class="form-actions">
+        <button type="submit" class="btn-primary">
+            {% if mode == "new" %}+ Үүсгэх{% else %}💾 Хадгалах{% endif %}
+        </button>
+        <a href="{{ url_for('admin.products_list') }}" class="btn-secondary">Болих</a>
+    </div>
+
+</form>
+
+{% endblock %}

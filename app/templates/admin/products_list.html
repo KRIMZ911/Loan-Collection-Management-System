@@ -1,0 +1,222 @@
+{% extends "base.html" %}
+{% block content %}
+
+<style>
+    .admin-header {
+        display: flex; justify-content: space-between; align-items: center;
+        gap: 16px; padding: 20px 24px; background: white;
+        border-radius: 12px; margin-bottom: 16px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .admin-header-left { display: flex; align-items: center; gap: 16px; flex: 1; }
+    .admin-title-icon { font-size: 32px; }
+    .admin-title h1 { margin: 0; font-size: 22px; font-weight: 700; color: #0F172A; }
+    .admin-title .subtitle { font-size: 13px; color: #64748B; margin-top: 2px; }
+    .back-btn {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 8px 14px; background: white; border: 1px solid #E2E8F0;
+        border-radius: 8px; color: #475569; text-decoration: none;
+        font-size: 13px; font-weight: 500;
+    }
+    .back-btn:hover { background: #F8FAFC; }
+
+    .flash-messages { margin-bottom: 16px; }
+    .flash-msg { padding: 12px 16px; border-radius: 8px; margin-bottom: 8px; font-size: 14px; }
+    .flash-success { background: #DCFCE7; color: #166534; border: 1px solid #BBF7D0; }
+    .flash-error { background: #FEE2E2; color: #991B1B; border: 1px solid #FECACA; }
+    .flash-warning { background: #FEF3C7; color: #92400E; border: 1px solid #FDE68A; }
+    .flash-info { background: #DBEAFE; color: #1E40AF; border: 1px solid #BFDBFE; }
+
+    .filter-bar {
+        background: white; border-radius: 12px; padding: 16px 20px;
+        margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+        display: flex; gap: 12px; align-items: end; flex-wrap: wrap;
+    }
+    .filter-group { display: flex; flex-direction: column; gap: 4px; min-width: 160px; }
+    .filter-group label {
+        font-size: 11px; color: #64748B; font-weight: 600;
+        text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    .filter-group select {
+        padding: 8px 10px; font-size: 13px;
+        border: 1px solid #E2E8F0; border-radius: 8px; background: white;
+    }
+    .filter-btn {
+        padding: 9px 18px; background: #2563EB; color: white;
+        border: none; border-radius: 8px; font-size: 13px; font-weight: 600;
+        cursor: pointer;
+    }
+    .filter-clear {
+        padding: 9px 18px; background: white; color: #64748B;
+        border: 1px solid #E2E8F0; border-radius: 8px; font-size: 13px;
+        text-decoration: none;
+    }
+
+    .action-row {
+        display: flex; justify-content: space-between; align-items: center;
+        margin-bottom: 16px;
+    }
+    .btn-primary {
+        padding: 10px 20px; background: #7C3AED; color: white;
+        border-radius: 8px; text-decoration: none;
+        font-size: 14px; font-weight: 600;
+    }
+    .btn-primary:hover { background: #6D28D9; }
+
+    .data-table {
+        background: white; border-radius: 12px; overflow: hidden;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .data-table table { width: 100%; border-collapse: collapse; }
+    .data-table th, .data-table td {
+        padding: 12px 16px; text-align: left; font-size: 13px;
+        border-bottom: 1px solid #F1F5F9;
+    }
+    .data-table th {
+        background: #F8FAFC; font-size: 11px; color: #64748B;
+        text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;
+    }
+    .data-table tr:last-child td { border-bottom: none; }
+    .data-table tr.retired td { opacity: 0.5; }
+
+    .status-pill {
+        display: inline-block; padding: 2px 10px; border-radius: 999px;
+        font-size: 11px; font-weight: 600;
+    }
+    .status-active { background: #DCFCE7; color: #166534; }
+    .status-retired { background: #F1F5F9; color: #64748B; }
+
+    .row-actions { display: flex; gap: 4px; }
+    .icon-btn {
+        padding: 6px 10px; border-radius: 6px; text-decoration: none;
+        font-size: 13px;
+    }
+    .icon-btn-edit { background: #DBEAFE; color: #1D4ED8; }
+    .icon-btn-edit:hover { background: #BFDBFE; }
+    .icon-btn-retire { background: #FEE2E2; color: #B91C1C; }
+    .icon-btn-retire:hover { background: #FECACA; }
+    .icon-btn-restore { background: #DCFCE7; color: #166534; cursor: pointer; border: none; }
+    .icon-btn-restore:hover { background: #BBF7D0; }
+
+    .badge-digital {
+        display: inline-block; padding: 2px 8px; background: #FEF3C7;
+        color: #92400E; border-radius: 4px; font-size: 11px; font-weight: 600;
+    }
+</style>
+
+<div class="admin-header">
+    <div class="admin-header-left">
+        <span class="admin-title-icon">📦</span>
+        <div class="admin-title">
+            <h1>Зээлийн бүтээгдэхүүн удирдах</h1>
+            <div class="subtitle">Бүтээгдэхүүн нэмэх, засах, идэвхгүй болгох</div>
+        </div>
+    </div>
+    <a href="{{ url_for('admin.index') }}" class="back-btn">← Удирдлага руу</a>
+</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        <div class="flash-messages">
+            {% for category, message in messages %}
+                <div class="flash-msg flash-{{ category }}">{{ message }}</div>
+            {% endfor %}
+        </div>
+    {% endif %}
+{% endwith %}
+
+<form method="GET" action="{{ url_for('admin.products_list') }}" class="filter-bar">
+    <div class="filter-group">
+        <label>Сегмент</label>
+        <select name="segment_id">
+            <option value="">— Бүгд —</option>
+            {% for s in segments %}
+                <option value="{{ s.id }}" {% if filter_segment_id == s.id %}selected{% endif %}>
+                    {{ s.name }}
+                </option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="filter-group">
+        <label>Төлөв</label>
+        <select name="active">
+            <option value="all" {% if filter_active == "all" %}selected{% endif %}>Бүгд</option>
+            <option value="active" {% if filter_active == "active" %}selected{% endif %}>Идэвхтэй</option>
+            <option value="retired" {% if filter_active == "retired" %}selected{% endif %}>Идэвхгүй</option>
+        </select>
+    </div>
+    <button type="submit" class="filter-btn">🔍 Шүүх</button>
+    <a href="{{ url_for('admin.products_list') }}" class="filter-clear">✕ Цэвэрлэх</a>
+</form>
+
+<div class="action-row">
+    <div style="font-size: 13px; color: #64748B;">
+        Нийт <strong>{{ products | length }}</strong> бүтээгдэхүүн олдлоо
+    </div>
+    <a href="{{ url_for('admin.product_new') }}" class="btn-primary">+ Шинэ бүтээгдэхүүн</a>
+</div>
+
+{% if products %}
+<div class="data-table">
+    <table>
+        <thead>
+            <tr>
+                <th>Нэр</th>
+                <th>Ангилал</th>
+                <th>Сегмент</th>
+                <th>Тэмдэглэгээ</th>
+                <th>Төлөв</th>
+                <th>Үйлдэл</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for p in products %}
+            <tr class="{% if not p.is_active %}retired{% endif %}">
+                <td><strong>{{ p.name }}</strong>
+                    {% if p.description %}
+                    <div style="font-size: 11px; color: #94A3B8; margin-top: 4px;">
+                        {{ p.description[:80] }}{% if p.description|length > 80 %}…{% endif %}
+                    </div>
+                    {% endif %}
+                </td>
+                <td>{{ p.category }}</td>
+                <td>{{ p.segment.name if p.segment else "—" }}</td>
+                <td>
+                    {% if p.is_digital %}<span class="badge-digital">Цахим</span>{% endif %}
+                    {% if p.auto_sms_day %}
+                        <span style="font-size: 11px; color: #64748B;">SMS day {{ p.auto_sms_day }}</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if p.is_active %}
+                        <span class="status-pill status-active">Идэвхтэй</span>
+                    {% else %}
+                        <span class="status-pill status-retired">Идэвхгүй</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <div class="row-actions">
+                        <a href="{{ url_for('admin.product_edit', product_id=p.id) }}" class="icon-btn icon-btn-edit" title="Засах">✏</a>
+                        {% if p.is_active %}
+                            <a href="{{ url_for('admin.product_retire', product_id=p.id) }}" class="icon-btn icon-btn-retire" title="Идэвхгүй болгох">📦</a>
+                        {% else %}
+                            <form method="POST" action="{{ url_for('admin.product_restore', product_id=p.id) }}" style="display: inline;">
+                                <button type="submit" class="icon-btn icon-btn-restore" title="Сэргээх">↩</button>
+                            </form>
+                        {% endif %}
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div style="background: white; border-radius: 12px; padding: 60px 24px; text-align: center; color: #64748B;">
+    <div style="font-size: 48px; margin-bottom: 12px;">📭</div>
+    <h3 style="color: #334155; margin: 0 0 8px;">Бүтээгдэхүүн олдсонгүй</h3>
+    <p>Сонгосон шүүлтэд тохирох бүтээгдэхүүн байхгүй байна.</p>
+</div>
+{% endif %}
+
+{% endblock %}
