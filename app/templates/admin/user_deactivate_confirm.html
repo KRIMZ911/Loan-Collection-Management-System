@@ -1,0 +1,353 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+    .admin-header {
+        display: flex; justify-content: space-between; align-items: center;
+        gap: 16px; padding: 20px 24px; background: white;
+        border-radius: 12px; margin-bottom: 16px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .admin-header-left { display: flex; align-items: center; gap: 16px; }
+    .admin-title-icon { font-size: 32px; }
+    .admin-title h1 { margin: 0; font-size: 22px; color: #DC2626; }
+    .admin-title .subtitle { font-size: 13px; color: #64748B; margin-top: 2px; }
+    .back-btn {
+        display: inline-flex; padding: 8px 14px; background: white;
+        border: 1px solid #E2E8F0; border-radius: 8px; color: #475569;
+        text-decoration: none; font-size: 13px; font-weight: 500;
+    }
+    .back-btn:hover { background: #F8FAFC; }
+    .flash-messages { margin-bottom: 16px; }
+    .flash-msg { padding: 12px 16px; border-radius: 8px; margin-bottom: 8px; font-size: 14px; }
+    .flash-success { background: #DCFCE7; color: #166534; border: 1px solid #BBF7D0; }
+    .flash-error { background: #FEE2E2; color: #991B1B; border: 1px solid #FECACA; }
+    .flash-warning { background: #FEF3C7; color: #92400E; border: 1px solid #FDE68A; }
+    .flash-info { background: #DBEAFE; color: #1E40AF; border: 1px solid #BFDBFE; }
+
+    /* Danger banner — top */
+    .danger-banner {
+        border-radius: 12px; padding: 20px 24px; margin-bottom: 16px;
+        display: flex; gap: 16px; align-items: flex-start;
+        border-left: 6px solid;
+    }
+    .danger-banner.high {
+        background: #FEE2E2; color: #7F1D1D; border-left-color: #DC2626;
+    }
+    .danger-banner.low {
+        background: #FEF3C7; color: #78350F; border-left-color: #F59E0B;
+    }
+    .danger-banner.none {
+        background: #DCFCE7; color: #14532D; border-left-color: #16A34A;
+    }
+    .danger-icon { font-size: 32px; line-height: 1; flex-shrink: 0; }
+    .danger-text h2 { margin: 0 0 4px; font-size: 18px; font-weight: 700; }
+    .danger-text p { margin: 0; font-size: 14px; }
+
+    /* User summary card */
+    .user-card {
+        background: white; border-radius: 12px; padding: 24px 28px;
+        margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+        display: flex; gap: 24px; align-items: center;
+    }
+    .user-avatar {
+        width: 64px; height: 64px; border-radius: 50%;
+        background: linear-gradient(135deg, #64748B, #94A3B8);
+        color: white; display: flex; align-items: center; justify-content: center;
+        font-size: 28px; font-weight: 700; flex-shrink: 0;
+    }
+    .user-info { flex: 1; }
+    .user-name { font-size: 20px; font-weight: 700; color: #0F172A; margin: 0; }
+    .user-role { font-size: 14px; color: #64748B; margin-top: 4px; }
+    .user-meta {
+        font-size: 12px; color: #94A3B8; margin-top: 4px;
+        display: flex; gap: 12px; flex-wrap: wrap;
+    }
+
+    /* Impact grid */
+    .impact-grid {
+        display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 12px; margin-bottom: 16px;
+    }
+    .impact-card {
+        background: white; border-radius: 12px; padding: 16px 20px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+        border-top: 3px solid #E2E8F0;
+    }
+    .impact-card.warn { border-top-color: #F59E0B; }
+    .impact-card.danger { border-top-color: #DC2626; }
+    .impact-label {
+        font-size: 11px; color: #64748B; font-weight: 600;
+        text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    .impact-value { font-size: 24px; font-weight: 700; color: #0F172A; margin-top: 4px; }
+    .impact-sub { font-size: 11px; color: #94A3B8; margin-top: 2px; }
+
+    /* Detail sections */
+    .info-card {
+        background: white; border-radius: 12px; padding: 20px 24px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06); margin-bottom: 16px;
+    }
+    .info-card h3 {
+        margin: 0 0 16px; font-size: 14px; color: #0F172A;
+        font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    .info-row { display: flex; padding: 8px 0; border-bottom: 1px solid #F1F5F9; font-size: 13px; }
+    .info-row:last-child { border-bottom: none; }
+    .info-row dt { width: 180px; color: #64748B; font-weight: 600; flex-shrink: 0; }
+    .info-row dd { margin: 0; color: #0F172A; flex: 1; }
+    .info-row dd strong { font-size: 15px; }
+
+    /* Risk loans table */
+    .risk-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+    .risk-table th, .risk-table td {
+        padding: 10px 12px; text-align: left; font-size: 13px;
+        border-bottom: 1px solid #F1F5F9;
+    }
+    .risk-table th {
+        background: #F8FAFC; font-size: 11px; color: #64748B;
+        text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;
+    }
+    .risk-table tr:last-child td { border-bottom: none; }
+    .risk-table a { color: #2563EB; text-decoration: none; font-weight: 600; }
+    .risk-table a:hover { text-decoration: underline; }
+    .amount-cell { font-family: monospace; text-align: right; color: #DC2626; font-weight: 600; }
+    .days-cell { text-align: center; }
+    .days-pill {
+        display: inline-block; padding: 2px 8px; border-radius: 4px;
+        font-size: 11px; font-weight: 700;
+    }
+    .days-low { background: #FEF3C7; color: #92400E; }
+    .days-mid { background: #FED7AA; color: #9A3412; }
+    .days-high { background: #FEE2E2; color: #991B1B; }
+
+    /* Confirmation form */
+    .confirm-card {
+        background: white; border-radius: 12px; padding: 24px 28px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06); margin-bottom: 16px;
+        border-top: 4px solid #DC2626;
+    }
+    .confirm-card h3 { margin: 0 0 12px; font-size: 18px; color: #DC2626; }
+    .confirm-card p { margin: 0 0 16px; color: #475569; font-size: 14px; line-height: 1.6; }
+    .checkbox-row {
+        display: flex; align-items: center; gap: 8px;
+        padding: 12px 16px; background: #FEF2F2; border-radius: 8px;
+        margin-bottom: 16px;
+    }
+    .checkbox-row input { width: 18px; height: 18px; cursor: pointer; }
+    .checkbox-row label {
+        margin: 0; font-size: 13px; color: #7F1D1D; font-weight: 600; cursor: pointer;
+    }
+    .form-actions { display: flex; gap: 8px; }
+    .btn-secondary {
+        padding: 10px 20px; background: white; color: #475569;
+        border: 1px solid #E2E8F0; border-radius: 8px;
+        font-size: 14px; font-weight: 500;
+        text-decoration: none; display: inline-block;
+    }
+    .btn-secondary:hover { background: #F8FAFC; }
+    .btn-danger {
+        padding: 10px 20px; background: #DC2626; color: white;
+        border: none; border-radius: 8px;
+        font-size: 14px; font-weight: 600; cursor: pointer;
+    }
+    .btn-danger:hover { background: #B91C1C; }
+    .btn-danger:disabled {
+        background: #FECACA; cursor: not-allowed;
+    }
+</style>
+
+<div class="admin-header">
+    <div class="admin-header-left">
+        <span class="admin-title-icon">⛔</span>
+        <div class="admin-title">
+            <h1>Хэрэглэгчийг идэвхгүй болгох</h1>
+            <div class="subtitle">⚙ Удирдлага → 👥 Хэрэглэгч → {{ target_user.name }} → Идэвхгүй болгох</div>
+        </div>
+    </div>
+    <a href="{{ url_for('admin.user_profile', user_id=target_user.id) }}" class="back-btn">← Болих</a>
+</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        <div class="flash-messages">
+            {% for category, message in messages %}
+                <div class="flash-msg flash-{{ category }}">{{ message }}</div>
+            {% endfor %}
+        </div>
+    {% endif %}
+{% endwith %}
+
+<!-- Danger banner — top -->
+<div class="danger-banner {{ workload.danger_level }}">
+    <div class="danger-icon">
+        {% if workload.danger_level == "high" %}🚨
+        {% elif workload.danger_level == "low" %}⚠️
+        {% else %}✅
+        {% endif %}
+    </div>
+    <div class="danger-text">
+        {% if workload.danger_level == "high" %}
+            <h2>Анхааруулга — Их ачаалалтай ажилтан</h2>
+            <p>Энэ хэрэглэгчид <strong>{{ workload.assignments.total_distinct }} идэвхтэй зээл</strong>
+               оноогдсон, нийт <strong>{{ "{:,.0f}".format(workload.overdue_summary.total_overdue_mnt) }} MNT</strong>
+               хэтэрсэн дүнтэй. Идэвхгүй болгохын өмнө эдгээр хэргүүдийг өөр ажилтанд шилжүүлэхийг
+               <strong>ХАТУУ ЗӨВЛӨЖ БАЙНА</strong>.</p>
+        {% elif workload.danger_level == "low" %}
+            <h2>Анхаарах зүйл бий</h2>
+            <p>Энэ хэрэглэгчид <strong>{{ workload.assignments.total_distinct }} идэвхтэй зээл</strong>
+               оноогдсон байна. Идэвхгүй болгосны дараа эдгээр хэргүүд хариуцагчгүй үлдэнэ.
+               Шилжүүлэхийг зөвлөж байна.</p>
+        {% else %}
+            <h2>Идэвхгүй болгож болно</h2>
+            <p>Энэ хэрэглэгчид идэвхтэй зээл оноогдоогүй байна — аюулгүйгээр идэвхгүй болгож болно.</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- User summary -->
+<div class="user-card">
+    <div class="user-avatar">{{ target_user.name[0] }}</div>
+    <div class="user-info">
+        <div class="user-name">{{ target_user.name }}</div>
+        <div class="user-role">{{ target_user.role.name_mn if target_user.role else "—" }}</div>
+        <div class="user-meta">
+            <span>@{{ target_user.username }}</span>
+            <span>· {{ target_user.employee_id or "ID байхгүй" }}</span>
+            <span>· {{ target_user.email or "и-мэйл байхгүй" }}</span>
+            <span>· {% if target_user.branch %}🏢 {{ target_user.branch.name }}
+                      {% elif target_user.region %}🌍 {{ target_user.region.name }}
+                      {% else %}Төв оффис{% endif %}</span>
+        </div>
+    </div>
+</div>
+
+<!-- Impact strip -->
+<div class="impact-grid">
+    <div class="impact-card {% if workload.assignments.total_distinct > 5 %}danger{% elif workload.assignments.total_distinct > 0 %}warn{% endif %}">
+        <div class="impact-label">Идэвхтэй зээл</div>
+        <div class="impact-value">{{ workload.assignments.total_distinct }}</div>
+        <div class="impact-sub">хариуцагчгүй үлдэх</div>
+    </div>
+    <div class="impact-card {% if workload.overdue_summary.delinquent_count > 0 %}warn{% endif %}">
+        <div class="impact-label">Зөрчилтэй зээл</div>
+        <div class="impact-value">{{ workload.overdue_summary.delinquent_count }}</div>
+        <div class="impact-sub">шуурхай анхаарах</div>
+    </div>
+    <div class="impact-card {% if workload.overdue_summary.total_overdue_mnt > 10000000 %}danger{% elif workload.overdue_summary.total_overdue_mnt > 0 %}warn{% endif %}">
+        <div class="impact-label">Хэтэрсэн дүн</div>
+        <div class="impact-value">{{ "{:,.0f}".format(workload.overdue_summary.total_overdue_mnt) }}</div>
+        <div class="impact-sub">MNT</div>
+    </div>
+    <div class="impact-card">
+        <div class="impact-label">30 хоногийн идэвх</div>
+        <div class="impact-value">{{ workload.recent_activity.contact_logs + workload.recent_activity.actions_taken }}</div>
+        <div class="impact-sub">холбоо + үйлдэл</div>
+    </div>
+</div>
+
+<!-- Assignment breakdown -->
+{% if workload.assignments.total_distinct > 0 %}
+<div class="info-card">
+    <h3>📋 Зээлийн оноолтын задаргаа</h3>
+    <dl>
+        {% if workload.assignments.primary > 0 %}
+            <div class="info-row"><dt>Үндсэн хариуцагч</dt><dd><strong>{{ workload.assignments.primary }}</strong> зээл</dd></div>
+        {% endif %}
+        {% if workload.assignments.zm > 0 %}
+            <div class="info-row"><dt>ЗМ (мэргэжилтэн)</dt><dd><strong>{{ workload.assignments.zm }}</strong> зээл</dd></div>
+        {% endif %}
+        {% if workload.assignments.zkha > 0 %}
+            <div class="info-row"><dt>ЗХА (хариуцсан)</dt><dd><strong>{{ workload.assignments.zkha }}</strong> зээл</dd></div>
+        {% endif %}
+        {% if workload.assignments.analyst > 0 %}
+            <div class="info-row"><dt>Шинжээч</dt><dd><strong>{{ workload.assignments.analyst }}</strong> зээл</dd></div>
+        {% endif %}
+        {% if workload.assignments.hm > 0 %}
+            <div class="info-row"><dt>ХМ (харилцааны)</dt><dd><strong>{{ workload.assignments.hm }}</strong> зээл</dd></div>
+        {% endif %}
+    </dl>
+</div>
+{% endif %}
+
+<!-- Top risk loans (impact preview) -->
+{% if workload.top_risk_loans %}
+<div class="info-card">
+    <h3>🔥 Хариуцагчгүй үлдэх хамгийн өндөр эрсдэлтэй зээлүүд</h3>
+    <table class="risk-table">
+        <thead>
+            <tr>
+                <th>Зээлийн дугаар</th>
+                <th>Зээлдэгч</th>
+                <th>Салбар</th>
+                <th style="text-align: right;">Хэтэрсэн дүн (MNT)</th>
+                <th style="text-align: center;">Хоног</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for loan in workload.top_risk_loans %}
+            <tr>
+                <td><a href="{{ url_for('dashboard.case_detail', loan_id=loan.id) }}">{{ loan.loan_account }}</a></td>
+                <td>{{ loan.borrower_name }}</td>
+                <td>{{ loan.branch_name }}</td>
+                <td class="amount-cell">{{ "{:,.0f}".format(loan.amount_overdue) }}</td>
+                <td class="days-cell">
+                    {% if loan.delinquency_days >= 90 %}
+                        <span class="days-pill days-high">{{ loan.delinquency_days }}</span>
+                    {% elif loan.delinquency_days >= 30 %}
+                        <span class="days-pill days-mid">{{ loan.delinquency_days }}</span>
+                    {% else %}
+                        <span class="days-pill days-low">{{ loan.delinquency_days }}</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+<!-- Recent activity -->
+{% if workload.recent_activity.contact_logs + workload.recent_activity.actions_taken + workload.recent_activity.case_transfers > 0 %}
+<div class="info-card">
+    <h3>📞 Сүүлийн {{ workload.recent_activity.window_days }} хоногийн идэвх</h3>
+    <dl>
+        <div class="info-row"><dt>Холбоо барилт</dt><dd><strong>{{ workload.recent_activity.contact_logs }}</strong> бүртгэл</dd></div>
+        <div class="info-row"><dt>Авсан арга хэмжээ</dt><dd><strong>{{ workload.recent_activity.actions_taken }}</strong> үйлдэл</dd></div>
+        <div class="info-row"><dt>Хэрэг шилжүүлэг</dt><dd><strong>{{ workload.recent_activity.case_transfers }}</strong> хэрэг</dd></div>
+    </dl>
+</div>
+{% endif %}
+
+<!-- Confirmation -->
+<div class="confirm-card">
+    <h3>⛔ Та итгэлтэй байна уу?</h3>
+    <p>
+        Идэвхгүй болгосны дараа энэ хэрэглэгч системд нэвтэрч чадахгүй болно.
+        Тэдний хийсэн өмнөх үйлдлийн түүх (холбоо барилт, зорилт, үйлдэл) бүгд хадгалагдсан хэвээр үлдэнэ.
+        Хэрэглэгчийг устгахгүй — зөвхөн идэвхгүй болгоно.
+    </p>
+    <p>
+        Хүсвэл дараа нь дахин идэвхтэй болгож болно.
+    </p>
+
+    <form method="POST" action="{{ url_for('admin.user_deactivate', user_id=target_user.id) }}">
+        {% if workload.danger_level == "high" %}
+        <div class="checkbox-row">
+            <input type="checkbox" id="confirm_high_risk" required onchange="document.getElementById('submit_btn').disabled = !this.checked">
+            <label for="confirm_high_risk">
+                Би энэхүү хэрэглэгчийн идэвхтэй зээлүүдийг өөр ажилтанд шилжүүлэх ёстойг ойлгож байна
+            </label>
+        </div>
+        {% endif %}
+
+        <div class="form-actions">
+            <a href="{{ url_for('admin.user_profile', user_id=target_user.id) }}" class="btn-secondary">⬅ Болих</a>
+            <button type="submit" id="submit_btn" class="btn-danger"
+                    {% if workload.danger_level == "high" %}disabled{% endif %}>
+                ⛔ Тийм, идэвхгүй болго
+            </button>
+        </div>
+    </form>
+</div>
+
+{% endblock %}

@@ -1,0 +1,329 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+    .admin-header {
+        display: flex; justify-content: space-between; align-items: center;
+        gap: 16px; padding: 20px 24px; background: white;
+        border-radius: 12px; margin-bottom: 16px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .admin-header-left { display: flex; align-items: center; gap: 16px; flex: 1; }
+    .admin-title-icon { font-size: 32px; }
+    .admin-title h1 { margin: 0; font-size: 22px; font-weight: 700; color: #0F172A; }
+    .admin-title .subtitle { font-size: 13px; color: #64748B; margin-top: 2px; }
+    .back-btn {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 8px 14px; background: white; border: 1px solid #E2E8F0;
+        border-radius: 8px; color: #475569; text-decoration: none;
+        font-size: 13px; font-weight: 500;
+    }
+    .back-btn:hover { background: #F8FAFC; }
+    .header-actions { display: flex; gap: 8px; align-items: center; }
+    .btn-edit {
+        padding: 9px 16px; background: #DBEAFE; color: #1D4ED8;
+        border-radius: 8px; text-decoration: none;
+        font-size: 13px; font-weight: 600;
+    }
+    .btn-edit:hover { background: #BFDBFE; }
+    .btn-deactivate {
+        padding: 9px 16px; background: #FEE2E2; color: #B91C1C;
+        border-radius: 8px; text-decoration: none;
+        font-size: 13px; font-weight: 600;
+    }
+    .btn-deactivate:hover { background: #FECACA; }
+    .btn-reactivate {
+        padding: 9px 16px; background: #DCFCE7; color: #166534;
+        border: none; border-radius: 8px;
+        font-size: 13px; font-weight: 600; cursor: pointer;
+    }
+    .btn-reactivate:hover { background: #BBF7D0; }
+    .flash-messages { margin-bottom: 16px; }
+    .flash-msg { padding: 12px 16px; border-radius: 8px; margin-bottom: 8px; font-size: 14px; }
+    .flash-success { background: #DCFCE7; color: #166534; border: 1px solid #BBF7D0; }
+    .flash-error { background: #FEE2E2; color: #991B1B; border: 1px solid #FECACA; }
+    .flash-warning { background: #FEF3C7; color: #92400E; border: 1px solid #FDE68A; }
+    .flash-info { background: #DBEAFE; color: #1E40AF; border: 1px solid #BFDBFE; }
+
+    /* Hero card — name + role + status */
+    .profile-hero {
+        background: white; border-radius: 12px; padding: 28px 32px;
+        margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+        display: flex; gap: 24px; align-items: center;
+    }
+    .profile-avatar {
+        width: 72px; height: 72px; border-radius: 50%;
+        background: linear-gradient(135deg, #0D9488, #14B8A6);
+        color: white; display: flex; align-items: center; justify-content: center;
+        font-size: 32px; font-weight: 700; flex-shrink: 0;
+    }
+    .profile-hero-info { flex: 1; }
+    .profile-name { font-size: 24px; font-weight: 700; color: #0F172A; margin: 0; }
+    .profile-meta { font-size: 14px; color: #64748B; margin-top: 4px; }
+    .status-pill {
+        display: inline-block; padding: 4px 12px; border-radius: 999px;
+        font-size: 12px; font-weight: 700; margin-left: 8px;
+    }
+    .status-active { background: #DCFCE7; color: #166534; }
+    .status-inactive { background: #F1F5F9; color: #64748B; }
+    .self-badge {
+        display: inline-block; padding: 4px 12px; border-radius: 999px;
+        font-size: 12px; font-weight: 600; margin-left: 8px;
+        background: #FEF3C7; color: #92400E;
+    }
+
+    /* KPI grid */
+    .kpi-grid {
+        display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 12px; margin-bottom: 16px;
+    }
+    .kpi-card {
+        background: white; border-radius: 12px; padding: 16px 20px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+        border-top: 3px solid #E2E8F0;
+    }
+    .kpi-card.danger-high { border-top-color: #DC2626; }
+    .kpi-card.danger-low { border-top-color: #F59E0B; }
+    .kpi-card.danger-none { border-top-color: #16A34A; }
+    .kpi-label {
+        font-size: 11px; color: #64748B; font-weight: 600;
+        text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    .kpi-value { font-size: 24px; font-weight: 700; color: #0F172A; margin-top: 4px; }
+    .kpi-sub { font-size: 11px; color: #94A3B8; margin-top: 2px; }
+
+    /* Detail sections */
+    .section-grid {
+        display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+        margin-bottom: 16px;
+    }
+    @media (max-width: 900px) {
+        .section-grid { grid-template-columns: 1fr; }
+    }
+    .info-card {
+        background: white; border-radius: 12px; padding: 20px 24px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .info-card h3 {
+        margin: 0 0 16px; font-size: 14px; color: #0F172A;
+        font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    .info-row { display: flex; padding: 8px 0; border-bottom: 1px solid #F1F5F9; font-size: 13px; }
+    .info-row:last-child { border-bottom: none; }
+    .info-row dt { width: 140px; color: #64748B; font-weight: 600; flex-shrink: 0; }
+    .info-row dd { margin: 0; color: #0F172A; flex: 1; }
+
+    /* Top risk loans */
+    .risk-table {
+        background: white; border-radius: 12px; overflow: hidden;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06); margin-bottom: 16px;
+    }
+    .risk-table table { width: 100%; border-collapse: collapse; }
+    .risk-table th, .risk-table td {
+        padding: 10px 16px; text-align: left; font-size: 13px;
+        border-bottom: 1px solid #F1F5F9;
+    }
+    .risk-table th {
+        background: #F8FAFC; font-size: 11px; color: #64748B;
+        text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;
+    }
+    .risk-table tr:last-child td { border-bottom: none; }
+    .risk-table tr:hover { background: #FAFBFC; }
+    .risk-table a { color: #2563EB; text-decoration: none; font-weight: 600; }
+    .risk-table a:hover { text-decoration: underline; }
+    .amount-cell { font-family: monospace; text-align: right; color: #DC2626; font-weight: 600; }
+    .days-cell { text-align: center; }
+    .days-pill {
+        display: inline-block; padding: 2px 8px; border-radius: 4px;
+        font-size: 11px; font-weight: 700;
+    }
+    .days-low { background: #FEF3C7; color: #92400E; }
+    .days-mid { background: #FED7AA; color: #9A3412; }
+    .days-high { background: #FEE2E2; color: #991B1B; }
+</style>
+
+<div class="admin-header">
+    <div class="admin-header-left">
+        <span class="admin-title-icon">👤</span>
+        <div class="admin-title">
+            <h1>Хэрэглэгчийн дэлгэрэнгүй</h1>
+            <div class="subtitle">⚙ Удирдлага → 👥 Хэрэглэгч → {{ target_user.name }}</div>
+        </div>
+    </div>
+    <div class="header-actions">
+        <a href="{{ url_for('admin.users_list') }}" class="back-btn">← Жагсаалт руу</a>
+        {% if can_edit_target and not is_self %}
+            <a href="{{ url_for('admin.user_edit', user_id=target_user.id) }}" class="btn-edit">✏ Засах</a>
+            {% if target_user.is_active %}
+                <a href="{{ url_for('admin.user_deactivate', user_id=target_user.id) }}" class="btn-deactivate">⛔ Идэвхгүй болгох</a>
+            {% else %}
+                <form method="POST" action="{{ url_for('admin.user_reactivate', user_id=target_user.id) }}" style="display: inline;">
+                    <button type="submit" class="btn-reactivate">↩ Сэргээх</button>
+                </form>
+            {% endif %}
+        {% elif can_edit_target and is_self %}
+            <a href="{{ url_for('admin.user_edit', user_id=target_user.id) }}" class="btn-edit">✏ Засах</a>
+        {% endif %}
+    </div>
+</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        <div class="flash-messages">
+            {% for category, message in messages %}
+                <div class="flash-msg flash-{{ category }}">{{ message }}</div>
+            {% endfor %}
+        </div>
+    {% endif %}
+{% endwith %}
+
+<!-- HERO: name, role, status -->
+<div class="profile-hero">
+    <div class="profile-avatar">{{ target_user.name[0] }}</div>
+    <div class="profile-hero-info">
+        <div class="profile-name">
+            {{ target_user.name }}
+            {% if target_user.is_active %}
+                <span class="status-pill status-active">Идэвхтэй</span>
+            {% else %}
+                <span class="status-pill status-inactive">Идэвхгүй</span>
+            {% endif %}
+            {% if is_self %}
+                <span class="self-badge">Та өөрөө</span>
+            {% endif %}
+        </div>
+        <div class="profile-meta">
+            {{ target_user.role.name_mn if target_user.role else "—" }}
+            {% if target_user.branch %} · 🏢 {{ target_user.branch.name }}{% endif %}
+            {% if target_user.region and not target_user.branch %} · 🌍 {{ target_user.region.name }}{% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- KPI strip -->
+<div class="kpi-grid">
+    <div class="kpi-card danger-{{ workload.danger_level }}">
+        <div class="kpi-label">Идэвхтэй зээл</div>
+        <div class="kpi-value">{{ workload.assignments.total_distinct }}</div>
+        <div class="kpi-sub">
+            {% if workload.danger_level == "high" %}🔴 Их ачаалал
+            {% elif workload.danger_level == "low" %}🟡 Бага ачаалал
+            {% else %}🟢 Чөлөөтэй
+            {% endif %}
+        </div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-label">Зөрчилтэй</div>
+        <div class="kpi-value">{{ workload.overdue_summary.delinquent_count }}</div>
+        <div class="kpi-sub">зээл</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-label">Нийт хэтэрсэн дүн</div>
+        <div class="kpi-value">{{ "{:,.0f}".format(workload.overdue_summary.total_overdue_mnt) }}</div>
+        <div class="kpi-sub">MNT</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-label">Сүүлийн {{ workload.recent_activity.window_days }} хоног</div>
+        <div class="kpi-value">{{ workload.recent_activity.contact_logs }}</div>
+        <div class="kpi-sub">холбоо барилт</div>
+    </div>
+</div>
+
+<!-- Detail cards -->
+<div class="section-grid">
+    <div class="info-card">
+        <h3>👤 Хувийн мэдээлэл</h3>
+        <dl>
+            <div class="info-row"><dt>Нэр</dt><dd>{{ target_user.name }}</dd></div>
+            <div class="info-row"><dt>Нэвтрэх нэр</dt><dd>@{{ target_user.username }}</dd></div>
+            <div class="info-row"><dt>Ажилтны ID</dt><dd>{{ target_user.employee_id or "—" }}</dd></div>
+            <div class="info-row"><dt>И-мэйл</dt><dd>{{ target_user.email or "—" }}</dd></div>
+        </dl>
+    </div>
+
+    <div class="info-card">
+        <h3>🏢 Байгууллагын мэдээлэл</h3>
+        <dl>
+            <div class="info-row"><dt>Албан тушаал</dt><dd>{{ target_user.role.name_mn if target_user.role else "—" }}</dd></div>
+            <div class="info-row"><dt>Салбар</dt><dd>{{ target_user.branch.name if target_user.branch else "Төв оффис" }}</dd></div>
+            <div class="info-row"><dt>Бүс</dt><dd>{{ target_user.region.name if target_user.region else "—" }}</dd></div>
+            <div class="info-row"><dt>Төлөв</dt><dd>
+                {% if target_user.is_active %}
+                    <span style="color: #16A34A; font-weight: 600;">✅ Идэвхтэй</span>
+                {% else %}
+                    <span style="color: #64748B; font-weight: 600;">⛔ Идэвхгүй</span>
+                {% endif %}
+            </dd></div>
+        </dl>
+    </div>
+</div>
+
+<!-- Assignment breakdown + activity -->
+<div class="section-grid">
+    <div class="info-card">
+        <h3>📋 Зээлийн оноолт</h3>
+        <dl>
+            <div class="info-row"><dt>Үндсэн хариуцагч</dt><dd><strong>{{ workload.assignments.primary }}</strong> зээл</dd></div>
+            <div class="info-row"><dt>ЗМ (мэргэжилтэн)</dt><dd><strong>{{ workload.assignments.zm }}</strong> зээл</dd></div>
+            <div class="info-row"><dt>ЗХА (хариуцсан)</dt><dd><strong>{{ workload.assignments.zkha }}</strong> зээл</dd></div>
+            <div class="info-row"><dt>Шинжээч</dt><dd><strong>{{ workload.assignments.analyst }}</strong> зээл</dd></div>
+            <div class="info-row"><dt>ХМ (харилцааны)</dt><dd><strong>{{ workload.assignments.hm }}</strong> зээл</dd></div>
+            <div class="info-row" style="border-top: 2px solid #E2E8F0; padding-top: 12px;">
+                <dt>Нийт давхардсан</dt><dd><strong>{{ workload.assignments.total_distinct }}</strong> өвөрмөц зээл</dd>
+            </div>
+        </dl>
+    </div>
+
+    <div class="info-card">
+        <h3>📞 Сүүлийн {{ workload.recent_activity.window_days }} хоногийн идэвх</h3>
+        <dl>
+            <div class="info-row"><dt>Холбоо барилт</dt><dd><strong>{{ workload.recent_activity.contact_logs }}</strong> бүртгэл</dd></div>
+            <div class="info-row"><dt>Арга хэмжээ</dt><dd><strong>{{ workload.recent_activity.actions_taken }}</strong> үйлдэл</dd></div>
+            <div class="info-row"><dt>Шилжүүлэг</dt><dd><strong>{{ workload.recent_activity.case_transfers }}</strong> хэрэг</dd></div>
+            <div class="info-row" style="border-top: 2px solid #E2E8F0; padding-top: 12px;">
+                <dt>Тогтоосон зорилт</dt><dd><strong>{{ workload.goals_managed.set }}</strong></dd>
+            </div>
+            <div class="info-row"><dt>Засварласан зорилт</dt><dd><strong>{{ workload.goals_managed.edited }}</strong></dd></div>
+        </dl>
+    </div>
+</div>
+
+<!-- Top risk loans -->
+{% if workload.top_risk_loans %}
+<div class="info-card" style="padding: 0;">
+    <h3 style="padding: 20px 24px 0; margin: 0;">🔥 Хамгийн өндөр эрсдэлтэй зээлүүд</h3>
+    <div class="risk-table">
+        <table>
+            <thead>
+                <tr>
+                    <th>Зээлийн дугаар</th>
+                    <th>Зээлдэгч</th>
+                    <th>Салбар</th>
+                    <th style="text-align: right;">Хэтэрсэн дүн (MNT)</th>
+                    <th style="text-align: center;">Хоног</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for loan in workload.top_risk_loans %}
+                <tr>
+                    <td><a href="{{ url_for('dashboard.case_detail', loan_id=loan.id) }}">{{ loan.loan_account }}</a></td>
+                    <td>{{ loan.borrower_name }}</td>
+                    <td>{{ loan.branch_name }}</td>
+                    <td class="amount-cell">{{ "{:,.0f}".format(loan.amount_overdue) }}</td>
+                    <td class="days-cell">
+                        {% if loan.delinquency_days >= 90 %}
+                            <span class="days-pill days-high">{{ loan.delinquency_days }}</span>
+                        {% elif loan.delinquency_days >= 30 %}
+                            <span class="days-pill days-mid">{{ loan.delinquency_days }}</span>
+                        {% else %}
+                            <span class="days-pill days-low">{{ loan.delinquency_days }}</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}

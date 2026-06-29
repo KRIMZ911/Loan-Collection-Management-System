@@ -1,0 +1,246 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+    .admin-header {
+        display: flex; justify-content: space-between; align-items: center;
+        gap: 16px; padding: 20px 24px; background: white;
+        border-radius: 12px; margin-bottom: 16px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .admin-header-left { display: flex; align-items: center; gap: 16px; flex: 1; }
+    .admin-title-icon { font-size: 32px; }
+    .admin-title h1 { margin: 0; font-size: 22px; font-weight: 700; color: #0F172A; }
+    .admin-title .subtitle { font-size: 13px; color: #64748B; margin-top: 2px; }
+    .back-btn {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 8px 14px; background: white; border: 1px solid #E2E8F0;
+        border-radius: 8px; color: #475569; text-decoration: none;
+        font-size: 13px; font-weight: 500;
+    }
+    .back-btn:hover { background: #F8FAFC; }
+    .flash-messages { margin-bottom: 16px; }
+    .flash-msg { padding: 12px 16px; border-radius: 8px; margin-bottom: 8px; font-size: 14px; }
+    .flash-success { background: #DCFCE7; color: #166534; border: 1px solid #BBF7D0; }
+    .flash-error { background: #FEE2E2; color: #991B1B; border: 1px solid #FECACA; }
+    .flash-warning { background: #FEF3C7; color: #92400E; border: 1px solid #FDE68A; }
+    .flash-info { background: #DBEAFE; color: #1E40AF; border: 1px solid #BFDBFE; }
+    .filter-bar {
+        background: white; border-radius: 12px; padding: 16px 20px;
+        margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+        display: flex; gap: 12px; align-items: end; flex-wrap: wrap;
+    }
+    .filter-group { display: flex; flex-direction: column; gap: 4px; min-width: 160px; }
+    .filter-group label {
+        font-size: 11px; color: #64748B; font-weight: 600;
+        text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    .filter-group select {
+        padding: 8px 10px; font-size: 13px;
+        border: 1px solid #E2E8F0; border-radius: 8px; background: white;
+    }
+    .filter-btn {
+        padding: 9px 18px; background: #2563EB; color: white;
+        border: none; border-radius: 8px; font-size: 13px; font-weight: 600;
+        cursor: pointer;
+    }
+    .filter-clear {
+        padding: 9px 18px; background: white; color: #64748B;
+        border: 1px solid #E2E8F0; border-radius: 8px; font-size: 13px;
+        text-decoration: none;
+    }
+    .action-row {
+        display: flex; justify-content: space-between; align-items: center;
+        margin-bottom: 16px;
+    }
+    .btn-primary {
+        padding: 10px 20px; background: #0D9488; color: white;
+        border-radius: 8px; text-decoration: none;
+        font-size: 14px; font-weight: 600;
+    }
+    .btn-primary:hover { background: #0F766E; }
+    .data-table {
+        background: white; border-radius: 12px; overflow: hidden;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .data-table table { width: 100%; border-collapse: collapse; }
+    .data-table th, .data-table td {
+        padding: 12px 16px; text-align: left; font-size: 13px;
+        border-bottom: 1px solid #F1F5F9;
+    }
+    .data-table th {
+        background: #F8FAFC; font-size: 11px; color: #64748B;
+        text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;
+    }
+    .data-table tr:last-child td { border-bottom: none; }
+    .data-table tr.inactive td { opacity: 0.5; }
+    .data-table tr:hover { background: #FAFBFC; }
+    .user-name-cell { display: flex; flex-direction: column; gap: 2px; }
+    .user-name-cell .name { font-weight: 600; color: #0F172A; text-decoration: none; }
+    .user-name-cell .name:hover { color: #2563EB; }
+    .user-name-cell .username { font-size: 11px; color: #94A3B8; }
+    .status-pill {
+        display: inline-block; padding: 2px 10px; border-radius: 999px;
+        font-size: 11px; font-weight: 600;
+    }
+    .status-active { background: #DCFCE7; color: #166534; }
+    .status-inactive { background: #F1F5F9; color: #64748B; }
+    .row-actions { display: flex; gap: 4px; align-items: center; }
+    .icon-btn {
+        padding: 6px 10px; border-radius: 6px; text-decoration: none;
+        font-size: 13px;
+    }
+    .icon-btn-view { background: #F1F5F9; color: #475569; }
+    .icon-btn-view:hover { background: #E2E8F0; }
+    .icon-btn-edit { background: #DBEAFE; color: #1D4ED8; }
+    .icon-btn-edit:hover { background: #BFDBFE; }
+    .icon-btn-deactivate { background: #FEE2E2; color: #B91C1C; }
+    .icon-btn-deactivate:hover { background: #FECACA; }
+    .icon-btn-reactivate {
+        background: #DCFCE7; color: #166534; cursor: pointer;
+        border: none; padding: 6px 10px; border-radius: 6px; font-size: 13px;
+    }
+    .icon-btn-reactivate:hover { background: #BBF7D0; }
+    .role-badge {
+        display: inline-block; padding: 2px 8px; background: #F3E8FF;
+        color: #6B21A8; border-radius: 4px; font-size: 11px; font-weight: 600;
+    }
+</style>
+
+<div class="admin-header">
+    <div class="admin-header-left">
+        <span class="admin-title-icon">👥</span>
+        <div class="admin-title">
+            <h1>Хэрэглэгч{% if can_manage_users %} удирдах{% endif %}</h1>
+            <div class="subtitle">
+                {% if can_manage_users %}
+                    Ажилтан нэмэх, засах, идэвхгүй болгох
+                {% else %}
+                    Ажилтны жагсаалт (зөвхөн харах)
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <a href="{{ url_for('admin.index') }}" class="back-btn">← Удирдлага руу</a>
+</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        <div class="flash-messages">
+            {% for category, message in messages %}
+                <div class="flash-msg flash-{{ category }}">{{ message }}</div>
+            {% endfor %}
+        </div>
+    {% endif %}
+{% endwith %}
+
+<form method="GET" action="{{ url_for('admin.users_list') }}" class="filter-bar">
+    <div class="filter-group">
+        <label>Албан тушаал</label>
+        <select name="role_code">
+            <option value="">— Бүгд —</option>
+            {% for r in roles %}
+                <option value="{{ r.code }}" {% if filter_role == r.code %}selected{% endif %}>
+                    {{ r.name_mn }}
+                </option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="filter-group">
+        <label>Салбар</label>
+        <select name="branch_id">
+            <option value="">— Бүгд —</option>
+            {% for b in branches %}
+                <option value="{{ b.id }}" {% if filter_branch_id == b.id %}selected{% endif %}>
+                    {{ b.name }}
+                </option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="filter-group">
+        <label>Төлөв</label>
+        <select name="active">
+            <option value="all" {% if filter_active == "all" %}selected{% endif %}>Бүгд</option>
+            <option value="active" {% if filter_active == "active" %}selected{% endif %}>Идэвхтэй</option>
+            <option value="inactive" {% if filter_active == "inactive" %}selected{% endif %}>Идэвхгүй</option>
+        </select>
+    </div>
+    <button type="submit" class="filter-btn">🔍 Шүүх</button>
+    <a href="{{ url_for('admin.users_list') }}" class="filter-clear">✕ Цэвэрлэх</a>
+</form>
+
+<div class="action-row">
+    <div style="font-size: 13px; color: #64748B;">
+        Нийт <strong>{{ users | length }}</strong> хэрэглэгч олдлоо
+    </div>
+    {% if can_manage_users %}
+        <a href="{{ url_for('admin.user_new') }}" class="btn-primary">+ Шинэ хэрэглэгч</a>
+    {% endif %}
+</div>
+
+{% if users %}
+<div class="data-table">
+    <table>
+        <thead>
+            <tr>
+                <th>Нэр</th>
+                <th>Албан тушаал</th>
+                <th>Салбар</th>
+                <th>И-мэйл</th>
+                <th>Төлөв</th>
+                <th>Үйлдэл</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for u in users %}
+            <tr class="{% if not u.is_active %}inactive{% endif %}">
+                <td>
+                    <div class="user-name-cell">
+                        <a href="{{ url_for('admin.user_profile', user_id=u.id) }}" class="name">{{ u.name }}</a>
+                        <span class="username">@{{ u.username }} · {{ u.employee_id }}</span>
+                    </div>
+                </td>
+                <td>
+                    {% if u.role %}
+                        <span class="role-badge">{{ u.role.name_mn }}</span>
+                    {% else %}
+                        <span style="color: #94A3B8;">—</span>
+                    {% endif %}
+                </td>
+                <td>{{ u.branch.name if u.branch else "—" }}</td>
+                <td style="font-size: 12px; color: #64748B;">{{ u.email or "—" }}</td>
+                <td>
+                    {% if u.is_active %}
+                        <span class="status-pill status-active">Идэвхтэй</span>
+                    {% else %}
+                        <span class="status-pill status-inactive">Идэвхгүй</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <div class="row-actions">
+                        <a href="{{ url_for('admin.user_profile', user_id=u.id) }}" class="icon-btn icon-btn-view" title="Дэлгэрэнгүй">👁</a>
+                        {% if can_manage_users %}
+                            <a href="{{ url_for('admin.user_edit', user_id=u.id) }}" class="icon-btn icon-btn-edit" title="Засах">✏</a>
+                            {% if u.is_active %}
+                                <a href="{{ url_for('admin.user_deactivate', user_id=u.id) }}" class="icon-btn icon-btn-deactivate" title="Идэвхгүй болгох">⛔</a>
+                            {% else %}
+                                <form method="POST" action="{{ url_for('admin.user_reactivate', user_id=u.id) }}" style="display: inline;">
+                                    <button type="submit" class="icon-btn-reactivate" title="Сэргээх">↩</button>
+                                </form>
+                            {% endif %}
+                        {% endif %}
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div style="background: white; border-radius: 12px; padding: 60px 24px; text-align: center; color: #64748B;">
+    <div style="font-size: 48px; margin-bottom: 12px;">📭</div>
+    <h3 style="color: #334155; margin: 0 0 8px;">Хэрэглэгч олдсонгүй</h3>
+    <p>Сонгосон шүүлтэд тохирох хэрэглэгч байхгүй байна.</p>
+</div>
+{% endif %}
+
+{% endblock %}

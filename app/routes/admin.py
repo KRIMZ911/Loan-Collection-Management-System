@@ -22,14 +22,14 @@ from flask import (
 )
 from app import db
 from app.models import (
-    AnnualGoal, GoalCategory, Branch, User, LoanProduct, Segment,
+    AnnualGoal, GoalCategory, Branch, User, Role, LoanProduct, Segment, Region,
 )
 from app.services.access_control import (
-    current_user, scope_branches,
+    current_user, scope_branches, scope_users,
     require_capability, require_login, can,
     get_dashboards, DASHBOARD_CATALOG,
 )
-
+from app.services.user_workload import get_user_workload
 admin_bp = Blueprint("admin", __name__)
 
 
@@ -121,7 +121,24 @@ def index():
             "sub":     "Зээлийн бүтээгдэхүүн нэмэх, засах",
             "url":     url_for("admin.products_list"),
             "color":   "#7C3AED",
-    })
+        })
+
+    if can(user, "can_manage_users"):
+        sections.append({
+            "icon":    "👥",
+            "title":   "Хэрэглэгч удирдах",
+            "sub":     "Ажилтан нэмэх, засах, идэвхгүй болгох",
+            "url":     url_for("admin.users_list"),
+            "color":   "#0D9488",
+        })
+    elif can(user, "can_see_employees"):
+        sections.append({
+            "icon":    "👥",
+            "title":   "Хэрэглэгчид",
+            "sub":     "Ажилтны мэдээллийг харах",
+            "url":     url_for("admin.users_list"),
+            "color":   "#0D9488",
+        })
 
     if not sections:
         # User has no admin access at all
@@ -649,3 +666,353 @@ def _render_product_form(mode, product=None, segments=None):
         "category_suggestions": ["Хэрэглээ", "Бизнес", "Карт", "Ипотек", "Авто"],
     })
     return render_template("admin/product_form.html", **ctx)
+
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# USERS ADMIN (Phase J.3)
+# ════════════════════════════════════════════════════════════════════════════
+
+def _get_role_choices():
+    "All roles for dropdowns. Ordered by code for predictable display."
+    return Role.query.order_by(Role.code).all()
+
+
+def _get_branch_choices(user):
+    """
+    Branches that `user` can assign new staff to.
+    Executive → all 15. Regional → their region's branches. Branch dir → just theirs.
+    Returns a list that may include None as a sentinel for HQ (no branch).
+    """
+    return scope_branches(Branch.query, user).order_by(Branch.name).all()
+
+
+def _can_edit_target(actor, target):
+    """
+    Permission gate for editing/deactivating a specific user.
+    Actor must have can_manage_users AND target must be inside actor's scope.
+    """
+    if not can(actor, "can_manage_users"):
+        return False
+    if target is None:
+        return False
+    # Reuse the existing scope_users helper — actor sees target iff scope allows
+    return (scope_users(User.query, actor)
+            .filter(User.id == target.id)
+            .first() is not None)
+
+
+def _user_form_choices(actor):
+    """Shared form context — roles + branches the actor can assign."""
+    return {
+        "roles":    _get_role_choices(),
+        "branches": _get_branch_choices(actor),
+        "regions":  Region.query.order_by(Region.name).all(),
+    }
+
+
+# ─── ROUTE: List users ──────────────────────────────────────────────────────
+
+@admin_bp.route("/users")
+@require_login
+def users_list():
+    """
+    List staff visible to this user.
+    Requires can_see_employees (read) OR can_manage_users (read+write).
+    Filters: ?role_code=...&branch_id=...&active=all|active|inactive
+    """
+    user = current_user()
+    if not (can(user, "can_see_employees") or can(user, "can_manage_users")):
+        abort(403)
+
+    filter_role     = request.args.get("role_code", "").strip() or None
+    filter_branch   = request.args.get("branch_id", type=int)
+    filter_active   = request.args.get("active", "all")
+
+    query = scope_users(User.query, user)
+
+    if filter_role:
+        query = query.filter(User.role.has(code=filter_role))
+    if filter_branch:
+        query = query.filter(User.branch_id == filter_branch)
+    if filter_active == "active":
+        query = query.filter(User.is_active.is_(True))
+    elif filter_active == "inactive":
+        query = query.filter(User.is_active.is_(False))
+
+    users = query.order_by(User.is_active.desc(), User.name).all()
+
+    ctx = _admin_context(active_section="users")
+    ctx.update({
+        "users":            users,
+        "roles":            _get_role_choices(),
+        "branches":         _get_branch_choices(user),
+        "filter_role":      filter_role,
+        "filter_branch_id": filter_branch,
+        "filter_active":    filter_active,
+        "can_manage_users": can(user, "can_manage_users"),
+    })
+    return render_template("admin/users_list.html", **ctx)
+
+
+# ─── ROUTE: View profile (read-only) ────────────────────────────────────────
+
+@admin_bp.route("/users/<int:user_id>")
+@require_login
+def user_profile(user_id):
+    """Read-only profile page with workload summary."""
+    actor = current_user()
+    if not (can(actor, "can_see_employees") or can(actor, "can_manage_users")):
+        abort(403)
+
+    # Scope check — actor can only view users in their scope
+    target = (scope_users(User.query, actor)
+              .filter(User.id == user_id)
+              .first())
+    if target is None:
+        abort(404)
+
+    workload = get_user_workload(target)
+
+    ctx = _admin_context(active_section="users")
+    ctx.update({
+        "target_user":      target,
+        "workload":         workload,
+        "can_manage_users": can(actor, "can_manage_users"),
+        "can_edit_target":  _can_edit_target(actor, target),
+        "is_self":          (actor.id == target.id),
+    })
+    return render_template("admin/user_profile.html", **ctx)
+
+
+# ─── ROUTE: Create new user ─────────────────────────────────────────────────
+
+@admin_bp.route("/users/new", methods=["GET", "POST"])
+@require_capability("can_manage_users")
+def user_new():
+    """Create a new staff user."""
+    actor = current_user()
+    choices = _user_form_choices(actor)
+
+    if request.method == "POST":
+        try:
+            name        = request.form["name"].strip()
+            username    = request.form["username"].strip()
+            email       = request.form["email"].strip()
+            employee_id = request.form["employee_id"].strip()
+            role_id     = int(request.form["role_id"])
+        except (KeyError, ValueError):
+            flash("Бүх шаардлагатай талбарыг бөглөнө үү.", "error")
+            return _render_user_form("new", actor=actor, target=None, choices=choices)
+
+        if not name or not username or not email:
+            flash("Нэр, нэвтрэх нэр, и-мэйл хоосон байж болохгүй.", "error")
+            return _render_user_form("new", actor=actor, target=None, choices=choices)
+
+        # Normalize optional fields — empty string becomes None
+        employee_id = employee_id or None
+        branch_id_raw = request.form.get("branch_id", "").strip()
+        region_id_raw = request.form.get("region_id", "").strip()
+        branch_id = int(branch_id_raw) if branch_id_raw.isdigit() else None
+        region_id = int(region_id_raw) if region_id_raw.isdigit() else None
+
+        # If branch is set, derive region from it (overrides any submitted region)
+        if branch_id:
+            br = Branch.query.get(branch_id)
+            if br is None:
+                flash("Сонгосон салбар буруу байна.", "error")
+                return _render_user_form("new", actor=actor, target=None, choices=choices)
+            # Scope check — actor must be allowed to place users in that branch
+            allowed_branch_ids = [b.id for b in choices["branches"]]
+            if br.id not in allowed_branch_ids:
+                abort(403)
+            region_id = br.region_id
+
+        # Username + email + employee_id uniqueness (friendly message instead of 500)
+        if User.query.filter_by(username=username).first():
+            flash(f"'{username}' нэвтрэх нэр аль хэдийн ашиглагдсан байна.", "error")
+            return _render_user_form("new", actor=actor, target=None, choices=choices)
+        if User.query.filter_by(email=email).first():
+            flash(f"'{email}' и-мэйл аль хэдийн бүртгэгдсэн байна.", "error")
+            return _render_user_form("new", actor=actor, target=None, choices=choices)
+        if employee_id and User.query.filter_by(employee_id=employee_id).first():
+            flash(f"'{employee_id}' ажилтны ID аль хэдийн бүртгэгдсэн байна.", "error")
+            return _render_user_form("new", actor=actor, target=None, choices=choices)
+
+        new_user = User(
+            name=name,
+            username=username,
+            email=email,
+            employee_id=employee_id,
+            role_id=role_id,
+            branch_id=branch_id,
+            region_id=region_id,
+            is_active=True,
+        )
+        db.session.add(new_user)
+        db.session.commit()
+        flash(f"✅ '{name}' хэрэглэгчийг амжилттай нэмлээ.", "success")
+        return redirect(url_for("admin.user_profile", user_id=new_user.id))
+
+    return _render_user_form("new", actor=actor, target=None, choices=choices)
+
+
+# ─── ROUTE: Edit user ───────────────────────────────────────────────────────
+
+@admin_bp.route("/users/<int:user_id>/edit", methods=["GET", "POST"])
+@require_capability("can_manage_users")
+def user_edit(user_id):
+    """Edit an existing staff user."""
+    actor = current_user()
+    target = User.query.get_or_404(user_id)
+
+    if not _can_edit_target(actor, target):
+        abort(403)
+
+    choices = _user_form_choices(actor)
+
+    if request.method == "POST":
+        try:
+            name        = request.form["name"].strip()
+            email       = request.form["email"].strip()
+            employee_id = request.form["employee_id"].strip()
+            role_id     = int(request.form["role_id"])
+        except (KeyError, ValueError):
+            flash("Бүх шаардлагатай талбарыг бөглөнө үү.", "error")
+            return _render_user_form("edit", actor=actor, target=target, choices=choices)
+
+        if not name or not email:
+            flash("Нэр болон и-мэйл хоосон байж болохгүй.", "error")
+            return _render_user_form("edit", actor=actor, target=target, choices=choices)
+
+        # Normalize — empty employee_id becomes None
+        employee_id = employee_id or None
+
+        # Email uniqueness — exclude current user
+        clash = User.query.filter(User.email == email, User.id != target.id).first()
+        if clash:
+            flash(f"'{email}' и-мэйл өөр хэрэглэгчид бүртгэгдсэн байна.", "error")
+            return _render_user_form("edit", actor=actor, target=target, choices=choices)
+        if employee_id:
+            clash = User.query.filter(User.employee_id == employee_id, User.id != target.id).first()
+            if clash:
+                flash(f"'{employee_id}' ажилтны ID өөр хэрэглэгчид бүртгэгдсэн байна.", "error")
+                return _render_user_form("edit", actor=actor, target=target, choices=choices)
+
+        # Branch / region update
+        branch_id_raw = request.form.get("branch_id", "").strip()
+        branch_id = int(branch_id_raw) if branch_id_raw.isdigit() else None
+
+        if branch_id:
+            br = Branch.query.get(branch_id)
+            if br is None:
+                flash("Сонгосон салбар буруу байна.", "error")
+                return _render_user_form("edit", actor=actor, target=target, choices=choices)
+            allowed_branch_ids = [b.id for b in choices["branches"]]
+            if br.id not in allowed_branch_ids:
+                abort(403)
+            region_id = br.region_id
+        else:
+            region_id_raw = request.form.get("region_id", "").strip()
+            region_id = int(region_id_raw) if region_id_raw.isdigit() else None
+
+        # Self-protection: actor cannot change their own role
+        if target.id == actor.id and role_id != target.role_id:
+            flash("Та өөрийн албан тушаалыг өөрчилж чадахгүй.", "error")
+            return _render_user_form("edit", actor=actor, target=target, choices=choices)
+
+        target.name        = name
+        target.email       = email
+        target.employee_id = employee_id
+        target.role_id     = role_id
+        target.branch_id   = branch_id
+        target.region_id   = region_id
+
+        db.session.commit()
+        flash(f"✅ '{name}'-н мэдээллийг шинэчиллээ.", "success")
+        return redirect(url_for("admin.user_profile", user_id=target.id))
+
+    return _render_user_form("edit", actor=actor, target=target, choices=choices)
+
+
+# ─── ROUTE: Deactivate (confirm + soft-disable) ─────────────────────────────
+
+@admin_bp.route("/users/<int:user_id>/deactivate", methods=["GET", "POST"])
+@require_capability("can_manage_users")
+def user_deactivate(user_id):
+    """
+    GET: show confirmation page with full workload (last chance to see impact).
+    POST: set is_active = False. J.1 audit hooks will log as DEACTIVATE.
+    """
+    actor = current_user()
+    target = User.query.get_or_404(user_id)
+
+    if not _can_edit_target(actor, target):
+        abort(403)
+
+    # Self-protection — no foot-shooting
+    if target.id == actor.id:
+        flash("Та өөрийн данс идэвхгүй болгож чадахгүй.", "error")
+        return redirect(url_for("admin.user_profile", user_id=target.id))
+
+    # Last-executive protection — don't lock the bank out of admin
+    if target.role and target.role.code == "executive":
+        remaining = (User.query
+                     .filter(User.role.has(code="executive"),
+                             User.is_active.is_(True),
+                             User.id != target.id)
+                     .count())
+        if remaining == 0:
+            flash("Сүүлийн идэвхтэй удирдлагыг идэвхгүй болгож болохгүй.", "error")
+            return redirect(url_for("admin.user_profile", user_id=target.id))
+
+    if request.method == "POST":
+        target.is_active = False
+        db.session.commit()
+        flash(f"📦 '{target.name}'-н данс идэвхгүй боллоо.", "success")
+        return redirect(url_for("admin.users_list"))
+
+    # GET — show confirmation page with workload
+    workload = get_user_workload(target)
+    ctx = _admin_context(active_section="users")
+    ctx.update({
+        "target_user": target,
+        "workload":    workload,
+    })
+    return render_template("admin/user_deactivate_confirm.html", **ctx)
+
+
+# ─── ROUTE: Reactivate ──────────────────────────────────────────────────────
+
+@admin_bp.route("/users/<int:user_id>/reactivate", methods=["POST"])
+@require_capability("can_manage_users")
+def user_reactivate(user_id):
+    """Re-enable a deactivated user. No confirmation needed (low-risk action)."""
+    actor = current_user()
+    target = User.query.get_or_404(user_id)
+
+    if not _can_edit_target(actor, target):
+        abort(403)
+
+    target.is_active = True
+    db.session.commit()
+    flash(f"✅ '{target.name}'-н данс дахин идэвхтэй боллоо.", "success")
+    return redirect(url_for("admin.user_profile", user_id=target.id))
+
+
+# ─── Internal form renderer ─────────────────────────────────────────────────
+
+def _render_user_form(mode, actor, target, choices):
+    "Render the create/edit user form. mode = 'new' or 'edit'."
+    ctx = _admin_context(active_section="users")
+    ctx.update({
+        "mode":        mode,
+        "form_action": (url_for("admin.user_new") if mode == "new"
+                        else url_for("admin.user_edit", user_id=target.id)),
+        "target":      target,
+        "roles":       choices["roles"],
+        "branches":    choices["branches"],
+        "regions":     choices["regions"],
+        "is_self":     (target is not None and target.id == actor.id),
+    })
+    return render_template("admin/user_form.html", **ctx)

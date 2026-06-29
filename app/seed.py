@@ -215,52 +215,80 @@ def seed_roles():
 
 
 def seed_users(roles, branches):
-    """Create test users."""
+    """
+    Create test users with realistic organizational placement.
+
+    branch_idx + region_idx semantics:
+      - branch_idx is None  → user not tied to a specific branch
+                              (HQ specialists, executive, outsourcing, regional director)
+      - region_idx is None  → derived from branch's region (normal branch staff)
+      - region_idx is set   → user covers a region but isn't at a specific branch
+                              (regional director — branch_idx=None, region_idx=<region>)
+    """
+    from app.models import Region
+    regions = Region.query.order_by(Region.id).all()
+
     users_data = [
-        ("Б. Батбаяр", "process_control", 0, "batbayar"),
-        ("О. Оюунчимэг", "process_control", 1, "oyuunchimeg"),
-        ("Г. Ганбат", "zm_control", 0, "ganbat"),
-        ("А. Алтанцэцэг", "zm_control", 5, "altantsetseg"),
-        ("Б. Болд", "zm_research", 0, "bold"),
-        ("С. Сарангэрэл", "retail_hm", 0, "sarangerel"),
-        ("Э. Энхбаяр", "smb_hm", 2, "enkhbayar"),
-        ("М. Мөнхзул", "senior_specialist", 0, "munkhzul"),
-        ("Д. Дэлгэрмаа", "branch_director", 0, "delgermaa"),
-        ("Х. Хүрэлбаатар", "regional_director", 0, "khurelbaatar"),
-        ("Н. Нарангэрэл", "segment_office", 0, "narangerel"),
-        ("Ц. Цолмон", "segment_specialist", 0, "tsolmon"),
-        ("Ж. Жаргал", "taug_specialist", 0, "jargal"),
-        ("П. Пүрэвдорж", "risk_analyst", 0, "purevdorj"),
-        ("Т. Тамир", "senior_analyst", 0, "tamir"),
-        ("Р. Ринчин", "risk_dept_director", 0, "rinchin"),
-        ("Г. Ганзориг", "lawyer", 0, "ganzorig"),
-        ("Г. Галмандах", "committee_secretary", 0, "galmandakh"),
-        ("Б. Баярмаа", "outsourcing_agent", None, "bayarmaa_os"),
-        ("Ц. Цэцэгмаа", "executive", 0, "tsetsegmaa"),
-        ("Н. Нямаа", "process_control", 2, "nyamaa"),
-        ("О. Отгонбаяр", "zm_control", 8, "otgonbayar"),
-        ("Э. Эрдэнэ", "zm_control", 3, "erdene"),
-        ("М. Мягмар", "retail_hm", 4, "myagmar"),
-        ("Л. Лхагва", "insurance_specialist", 0, "lkhagva"),
+        # ─── HQ specialists — bank-wide, no branch, no region ────────────────
+        ("Ц. Цэцэгмаа",   "executive",            None, "tsetsegmaa",   None),
+        ("Б. Батбаяр",    "process_control",      None, "batbayar",     None),
+        ("О. Оюунчимэг",  "process_control",      None, "oyuunchimeg",  None),
+        ("Н. Нямаа",      "process_control",      None, "nyamaa",       None),
+        ("Н. Нарангэрэл", "segment_office",       None, "narangerel",   None),
+        ("Ц. Цолмон",     "segment_specialist",   None, "tsolmon",      None),
+        ("Ж. Жаргал",     "taug_specialist",      None, "jargal",       None),
+        ("П. Пүрэвдорж",  "risk_analyst",         None, "purevdorj",    None),
+        ("Т. Тамир",      "senior_analyst",       None, "tamir",        None),
+        ("Р. Ринчин",     "risk_dept_director",   None, "rinchin",      None),
+        ("Г. Ганзориг",   "lawyer",               None, "ganzorig",     None),
+        ("Г. Галмандах",  "committee_secretary",  None, "galmandakh",   None),
+        ("Л. Лхагва",     "insurance_specialist", None, "lkhagva",      None),
+
+        # ─── Outsourcing (external party, no branch) ─────────────────────────
+        ("Б. Баярмаа",    "outsourcing_agent",    None, "bayarmaa_os",  None),
+
+        # ─── Regional director — region only, no branch ──────────────────────
+        ("Х. Хүрэлбаатар","regional_director",    None, "khurelbaatar", 0),  # Төв бүс
+
+        # ─── Branch-tied staff (branch_id set, region auto-derived) ──────────
+        ("Г. Ганбат",     "zm_control",           0, "ganbat",          None),
+        ("Б. Болд",       "zm_research",          0, "bold",            None),
+        ("С. Сарангэрэл", "retail_hm",            0, "sarangerel",      None),
+        ("М. Мөнхзул",    "senior_specialist",    0, "munkhzul",        None),
+        ("Д. Дэлгэрмаа",  "branch_director",      0, "delgermaa",       None),
+        ("А. Алтанцэцэг", "zm_control",           5, "altantsetseg",    None),
+        ("Э. Энхбаяр",    "smb_hm",               2, "enkhbayar",       None),
+        ("О. Отгонбаяр",  "zm_control",           8, "otgonbayar",      None),
+        ("Э. Эрдэнэ",     "zm_control",           3, "erdene",          None),
+        ("М. Мягмар",     "retail_hm",            4, "myagmar",         None),
     ]
+
     users = []
-    for name, role_code, branch_idx, username in users_data:
+    for name, role_code, branch_idx, username, region_idx in users_data:
+        branch_id = branches[branch_idx].id if branch_idx is not None else None
+        if region_idx is not None:
+            region_id = regions[region_idx].id
+        elif branch_idx is not None:
+            region_id = branches[branch_idx].region_id
+        else:
+            region_id = None
+
         u = User(
             name=name,
             username=username,
             employee_id=f"EMP{random.randint(1000, 9999)}",
             email=f"{username}@bank.mn",
             role_id=roles[role_code].id,
-            branch_id=branches[branch_idx].id if branch_idx is not None else None,
-            region_id=branches[branch_idx].region_id if branch_idx is not None else None,
+            branch_id=branch_id,
+            region_id=region_id,
             is_active=True,
         )
         users.append(u)
+
     db.session.add_all(users)
     db.session.flush()
     print(f"  ✅ {len(users)} users")
     return users
-
 
 def seed_loan_products(segments):
     """Create 12 loan products."""

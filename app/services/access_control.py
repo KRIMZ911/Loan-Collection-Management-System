@@ -301,10 +301,9 @@ ROLE_ACCESS: Dict[str, Dict[str, Any]] = {
                 
         "can_set_branch_goals": True,
         "can_manage_products": True,
+        "can_manage_users": True,
 
-        "can_set_worker_goals":        True,     # ← NEW       
-        "can_manage_users":             True,    # ← NEW
-        "can_manage_products":          True,    # ← NEW
+        "can_set_worker_goals":        True,     # ← NEW  
         "can_view_audit_log":           True,    # ← NEW
 
 
@@ -316,17 +315,17 @@ ROLE_ACCESS: Dict[str, Dict[str, Any]] = {
 _NO_ACCESS: Dict[str, Any] = {
     "dashboards":                  [],
     "geo_scope":                   GEO_NONE,
-    "segment_filter":              None,
-    "hide_personal":               True,
-    "can_see_employees":           False,
+    "segment_filter":               None,
+    "hide_personal":                True,
+    "can_see_employees":            False,
     "can_see_employee_performance": False,
-    "can_assign_cases":            False,
-    "can_export":                  False,
-    "can_set_branch_goals":        False,    # ← NEW
-    "can_set_worker_goals":        False,    # ← NEW
-    "can_manage_users":      False,    # ← NEW
-    "can_manage_products":   False,    # ← NEW
-    "can_view_audit_log":    False,    # ← NEW
+    "can_assign_cases":             False,
+    "can_export":                   False,
+    "can_set_branch_goals":         False,   
+    "can_set_worker_goals":         False,   
+    "can_manage_users":             False,    
+    "can_manage_products":          False,    
+    "can_view_audit_log":           False,    
 }
 
 

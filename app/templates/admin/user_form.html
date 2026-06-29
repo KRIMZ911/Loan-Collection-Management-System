@@ -1,0 +1,243 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+    .admin-header {
+        display: flex; justify-content: space-between; align-items: center;
+        gap: 16px; padding: 20px 24px; background: white;
+        border-radius: 12px; margin-bottom: 16px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .admin-header-left { display: flex; align-items: center; gap: 16px; }
+    .admin-title-icon { font-size: 32px; }
+    .admin-title h1 { margin: 0; font-size: 22px; font-weight: 700; color: #0F172A; }
+    .admin-title .subtitle { font-size: 13px; color: #64748B; margin-top: 2px; }
+    .back-btn {
+        display: inline-flex; padding: 8px 14px; background: white;
+        border: 1px solid #E2E8F0; border-radius: 8px; color: #475569;
+        text-decoration: none; font-size: 13px; font-weight: 500;
+    }
+    .back-btn:hover { background: #F8FAFC; }
+    .flash-messages { margin-bottom: 16px; }
+    .flash-msg { padding: 12px 16px; border-radius: 8px; margin-bottom: 8px; font-size: 14px; }
+    .flash-success { background: #DCFCE7; color: #166534; border: 1px solid #BBF7D0; }
+    .flash-error { background: #FEE2E2; color: #991B1B; border: 1px solid #FECACA; }
+    .flash-warning { background: #FEF3C7; color: #92400E; border: 1px solid #FDE68A; }
+    .flash-info { background: #DBEAFE; color: #1E40AF; border: 1px solid #BFDBFE; }
+    .form-card {
+        background: white; border-radius: 12px; padding: 24px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06); max-width: 760px;
+    }
+    .form-grid {
+        display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+    }
+    @media (max-width: 700px) {
+        .form-grid { grid-template-columns: 1fr; }
+    }
+    .form-row { margin-bottom: 16px; }
+    .form-row.full { grid-column: 1 / -1; }
+    .form-row label {
+        display: block; font-size: 12px; color: #334155; font-weight: 600;
+        margin-bottom: 6px;
+    }
+    .required { color: #DC2626; }
+    .form-row input, .form-row select, .form-row textarea {
+        width: 100%; padding: 10px 12px; font-size: 14px;
+        border: 1px solid #E2E8F0; border-radius: 8px; box-sizing: border-box;
+    }
+    .form-row input:focus, .form-row select:focus, .form-row textarea:focus {
+        outline: none; border-color: #2563EB;
+    }
+    .form-row input:disabled, .form-row select:disabled {
+        background: #F1F5F9; color: #64748B; cursor: not-allowed;
+    }
+    .form-row .help { font-size: 11px; color: #64748B; margin-top: 4px; }
+    .section-header {
+        font-size: 13px; color: #0F172A; font-weight: 700;
+        text-transform: uppercase; letter-spacing: 0.5px;
+        margin-top: 24px; margin-bottom: 12px;
+        padding-bottom: 8px; border-bottom: 1px solid #E2E8F0;
+    }
+    .section-header:first-of-type { margin-top: 0; }
+    .form-actions {
+        display: flex; gap: 8px; margin-top: 24px;
+        padding-top: 16px; border-top: 1px solid #F1F5F9;
+    }
+    .btn-primary {
+        padding: 10px 20px; background: #0D9488; color: white;
+        border: none; border-radius: 8px;
+        font-size: 14px; font-weight: 600; cursor: pointer;
+    }
+    .btn-primary:hover { background: #0F766E; }
+    .btn-secondary {
+        padding: 10px 20px; background: white; color: #475569;
+        border: 1px solid #E2E8F0; border-radius: 8px;
+        font-size: 14px; font-weight: 500;
+        text-decoration: none; display: inline-block;
+    }
+    .btn-secondary:hover { background: #F8FAFC; }
+    .info-banner {
+        background: #DBEAFE; color: #1E40AF; padding: 12px 16px;
+        border-radius: 8px; margin-bottom: 16px; font-size: 13px;
+        border: 1px solid #BFDBFE;
+    }
+    .self-warning {
+        background: #FEF3C7; color: #92400E; padding: 12px 16px;
+        border-radius: 8px; margin-bottom: 16px; font-size: 13px;
+        border: 1px solid #FDE68A;
+    }
+    .password-placeholder {
+        padding: 10px 12px; background: #F1F5F9;
+        border: 1px dashed #CBD5E1; border-radius: 8px;
+        font-size: 13px; color: #64748B; font-style: italic;
+    }
+</style>
+
+<div class="admin-header">
+    <div class="admin-header-left">
+        <span class="admin-title-icon">{% if mode == "new" %}➕{% else %}✏{% endif %}</span>
+        <div class="admin-title">
+            <h1>{% if mode == "new" %}Шинэ хэрэглэгч нэмэх{% else %}Хэрэглэгч засах{% endif %}</h1>
+            <div class="subtitle">
+                ⚙ Удирдлага → 👥 Хэрэглэгч →
+                {% if mode == "new" %}Шинэ{% else %}{{ target.name }} → Засах{% endif %}
+            </div>
+        </div>
+    </div>
+    <a href="{% if mode == 'edit' %}{{ url_for('admin.user_profile', user_id=target.id) }}{% else %}{{ url_for('admin.users_list') }}{% endif %}" class="back-btn">← Болих</a>
+</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        <div class="flash-messages">
+            {% for category, message in messages %}
+                <div class="flash-msg flash-{{ category }}">{{ message }}</div>
+            {% endfor %}
+        </div>
+    {% endif %}
+{% endwith %}
+
+{% if is_self %}
+    <div class="self-warning">
+        ⚠ <strong>Та өөрийн мэдээллийг засаж байна.</strong>
+        Өөрийн албан тушаалыг солих боломжгүй.
+    </div>
+{% endif %}
+
+<form method="POST" action="{{ form_action }}" class="form-card">
+
+    <div class="section-header">📇 Хувийн мэдээлэл</div>
+
+    <div class="form-grid">
+        <div class="form-row">
+            <label>Бүтэн нэр <span class="required">*</span></label>
+            <input type="text" name="name" required maxlength="200"
+                   value="{{ target.name if mode == 'edit' else '' }}"
+                   placeholder="Жишээ: Б. Батбаяр">
+        </div>
+
+        <div class="form-row">
+            <label>Ажилтны ID</label>
+            <input type="text" name="employee_id" maxlength="50"
+                   value="{{ target.employee_id if mode == 'edit' else '' }}"
+                   placeholder="Жишээ: EMP1234">
+            <div class="help">HR-аас өгсөн ажилтны бүртгэлийн дугаар</div>
+        </div>
+
+        <div class="form-row">
+            <label>Нэвтрэх нэр (username) <span class="required">*</span></label>
+            {% if mode == "edit" %}
+                <input type="text" disabled value="{{ target.username }}">
+                <div class="help">Нэвтрэх нэрийг өөрчилж болохгүй</div>
+            {% else %}
+                <input type="text" name="username" required maxlength="80"
+                       placeholder="Жишээ: batbayar">
+                <div class="help">Зөвхөн жижиг үсэг + тоо. Хоосон зай байж болохгүй.</div>
+            {% endif %}
+        </div>
+
+        <div class="form-row">
+            <label>И-мэйл <span class="required">*</span></label>
+            <input type="email" name="email" required maxlength="200"
+                   value="{{ target.email if mode == 'edit' else '' }}"
+                   placeholder="batbayar@bank.mn">
+        </div>
+    </div>
+
+    <div class="section-header">🏢 Албан тушаал, байршил</div>
+
+    <div class="form-grid">
+        <div class="form-row">
+            <label>Албан тушаал <span class="required">*</span></label>
+            <select name="role_id" required {% if is_self %}disabled{% endif %}>
+                <option value="">— Сонгох —</option>
+                {% for r in roles %}
+                    <option value="{{ r.id }}"
+                            {% if mode == 'edit' and target.role_id == r.id %}selected{% endif %}>
+                        {{ r.name_mn }} ({{ r.code }})
+                    </option>
+                {% endfor %}
+            </select>
+            {% if is_self %}
+                <div class="help">⚠ Та өөрийн албан тушаалаа солих эрхгүй</div>
+                <input type="hidden" name="role_id" value="{{ target.role_id }}">
+            {% endif %}
+        </div>
+
+        <div class="form-row">
+            <label>Салбар</label>
+            <select name="branch_id">
+                <option value="">— Төв оффис (салбаргүй) —</option>
+                {% for b in branches %}
+                    <option value="{{ b.id }}"
+                            {% if mode == 'edit' and target.branch_id == b.id %}selected{% endif %}>
+                        {{ b.name }}
+                    </option>
+                {% endfor %}
+            </select>
+            <div class="help">
+                Хоосон үлдээвэл Төв оффисын ажилтан гэж тооцогдоно.
+                Бүс автоматаар тохируулагдана.
+            </div>
+        </div>
+
+        <div class="form-row full">
+            <label>Бүс (салбаргүй ажилтны хувьд)</label>
+            <select name="region_id">
+                <option value="">— Сонгох —</option>
+                {% for r in regions %}
+                    <option value="{{ r.id }}"
+                            {% if mode == 'edit' and target.region_id == r.id and not target.branch_id %}selected{% endif %}>
+                        {{ r.name }}
+                    </option>
+                {% endfor %}
+            </select>
+            <div class="help">
+                Зөвхөн салбаргүй (Төв оффис) ажилтны хувьд тохируулна.
+                Салбартай бол энэ талбар хэрэггүй.
+            </div>
+        </div>
+    </div>
+
+    {% if mode == "new" %}
+    <div class="section-header">🔐 Нууц үг</div>
+    <div class="info-banner">
+        💡 Бодит нэвтрэлтийн систем Phase G-д хэрэгжих болно.
+        Одоогоор нууц үгийн талбар идэвхгүй байна — шинэ хэрэглэгч хэрэглэгч сонгогчоор нэвтэрнэ.
+    </div>
+    <div class="form-row">
+        <label>Эхлэлийн нууц үг</label>
+        <div class="password-placeholder">
+            🚧 Phase G-д хэрэгжих болно
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="form-actions">
+        <button type="submit" class="btn-primary">
+            {% if mode == "new" %}+ Үүсгэх{% else %}💾 Хадгалах{% endif %}
+        </button>
+        <a href="{% if mode == 'edit' %}{{ url_for('admin.user_profile', user_id=target.id) }}{% else %}{{ url_for('admin.users_list') }}{% endif %}" class="btn-secondary">Болих</a>
+    </div>
+</form>
+
+{% endblock %}
